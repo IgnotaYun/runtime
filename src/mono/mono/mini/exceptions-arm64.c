@@ -35,9 +35,11 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
 	guint8 *labels [16];
 
 	size = 256;
-	code = start = mono_global_codeman_reserve (size);
+	code = mono_global_codeman_reserve (size);
 
-	MINI_BEGIN_CODEGEN ();
+	MINI_BEGIN_CODEGEN_EX (code);
+	g_assert (code);
+	start = code;
 
 	arm_movx (code, ARMREG_IP0, ARMREG_R0);
 	ctx_reg = ARMREG_IP0;
@@ -67,10 +69,11 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
 
 	g_assert ((code - start) < size);
 
-	MINI_END_CODEGEN (start, GPTRDIFF_TO_INT (code - start), MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL);
+	gint32 finaL_size = GPTRDIFF_TO_INT (code - start);
+	MINI_END_CODEGEN_EX (start, finaL_size, MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL);
 
 	if (info)
-		*info = mono_tramp_info_create ("restore_context", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+		*info = mono_tramp_info_create ("restore_context", start, finaL_size, ji, unwind_ops);
 
 	return MINI_ADDR_TO_FTNPTR (start);
 }
@@ -86,7 +89,7 @@ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
 	guint8 *labels [16];
 
 	size = 512;
-	start = code = mono_global_codeman_reserve (size);
+	code = mono_global_codeman_reserve (size);
 
 	/* Compute stack frame size and offsets */
 	offset = 0;
@@ -109,7 +112,8 @@ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
 	 * returning the value returned by the call.
 	 */
 
-	MINI_BEGIN_CODEGEN ();
+	MINI_BEGIN_CODEGEN_EX (code);
+	start = code;
 
 	/* Setup a frame */
 	arm_stpx_pre (code, ARMREG_FP, ARMREG_LR, ARMREG_SP, -frame_size);
@@ -158,10 +162,11 @@ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
 
 	g_assert ((code - start) < size);
 
-	MINI_END_CODEGEN (start, GPTRDIFF_TO_INT (code - start), MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL);
+	gint32 final_size = GPTRDIFF_TO_INT (code - start);
+	MINI_END_CODEGEN_EX (start, final_size, MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL);
 
 	if (info)
-		*info = mono_tramp_info_create ("call_filter", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+		*info = mono_tramp_info_create ("call_filter", start, final_size, ji, unwind_ops);
 
 	return MINI_ADDR_TO_FTNPTR (start);
 }
@@ -174,7 +179,7 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 	GSList *unwind_ops = NULL;
 	int i, offset, gregs_offset, fregs_offset, frame_size, num_fregs;
 
-	code = start = mono_global_codeman_reserve (size);
+	code = mono_global_codeman_reserve (size);
 
 	/* We are being called by JITted code, the exception object/type token is in R0 */
 
@@ -191,7 +196,8 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 	offset += num_fregs * 8;
 	frame_size = ALIGN_TO (offset, MONO_ARCH_FRAME_ALIGNMENT);
 
-	MINI_BEGIN_CODEGEN ();
+	MINI_BEGIN_CODEGEN_EX(code);
+	start = code;
 
 	/* Setup a frame */
 	arm_stpx_pre (code, ARMREG_FP, ARMREG_LR, ARMREG_SP, -frame_size);
@@ -262,10 +268,11 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 
 	g_assert ((code - start) < size);
 
-	MINI_END_CODEGEN (start, GPTRDIFF_TO_INT (code - start), MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL);
+	gint32 final_size = GPTRDIFF_TO_INT (code - start);
+	MINI_END_CODEGEN_EX (start, final_size, MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL);
 
 	if (info)
-		*info = mono_tramp_info_create (tramp_name, start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+		*info = mono_tramp_info_create (tramp_name, start, final_size, ji, unwind_ops);
 
 	return MINI_ADDR_TO_FTNPTR (start);
 }
@@ -537,7 +544,7 @@ handle_signal_exception (gpointer obj)
 gboolean
 mono_arch_handle_exception (void *ctx, gpointer obj)
 {
-#if defined(MONO_CROSS_COMPILE)
+#if defined(MONO_CROSS_COMPILE) || defined(HOST_LIBNX)
 	g_assert_not_reached ();
 #else
 	MonoJitTlsData *jit_tls;
@@ -565,7 +572,7 @@ mono_arch_handle_exception (void *ctx, gpointer obj)
 gpointer
 mono_arch_ip_from_context (void *sigctx)
 {
-#ifdef MONO_CROSS_COMPILE
+#if defined(MONO_CROSS_COMPILE) || defined(HOST_LIBNX)
 	g_assert_not_reached ();
 	return NULL;
 #else

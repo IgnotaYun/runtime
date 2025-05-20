@@ -56,7 +56,9 @@ int32_t SystemNative_FUTimens(intptr_t fd, TimeSpec* times)
 {
     int32_t result;
 
-#if HAVE_FUTIMENS
+#ifdef TARGET_LIBNX
+    result = -1;
+#elif HAVE_FUTIMENS
     struct timespec updatedTimes[2];
     updatedTimes[0].tv_sec = (time_t)times[0].tv_sec;
     updatedTimes[0].tv_nsec = (long)times[0].tv_nsec;
@@ -114,7 +116,7 @@ int64_t SystemNative_GetBootTimeTicks(void)
 
 double SystemNative_GetCpuUtilization(ProcessCpuInformation* previousCpuInfo)
 {
-#if defined(HAVE_GETRUSAGE)
+#if defined(HAVE_GETRUSAGE) && !defined(HOST_BROWSER) && !defined(TARGET_LIBNX)
     uint64_t kernelTime = 0;
     uint64_t userTime = 0;
 
@@ -163,6 +165,14 @@ double SystemNative_GetCpuUtilization(ProcessCpuInformation* previousCpuInfo)
     previousCpuInfo->lastRecordedKernelTime = kernelTime;
 
     return cpuUtilization;
+#elif defined(TARGET_LIBNX)
+    // It seems there is no way around this, even when marked as unsupported it keeps getting called by something
+    // Implement it as a stub
+    uint64_t currentTime = SystemNative_GetTimestamp();
+    previousCpuInfo->lastRecordedCurrentTime = currentTime;
+    previousCpuInfo->lastRecordedUserTime = currentTime;
+    previousCpuInfo->lastRecordedKernelTime = 0;
+    return 60;
 #else
     (void)previousCpuInfo; // unused
     assert(false);

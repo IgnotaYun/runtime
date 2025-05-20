@@ -19,9 +19,31 @@ namespace System.IO
         internal const string DirectorySeparators = DirectorySeparatorCharAsString;
         internal static ReadOnlySpan<byte> Utf8DirectorySeparators => "/"u8;
 
+#if TARGET_LIBNX
+        internal static readonly string[] LibnxPathRoots = new string[]
+        {
+            "sdmc:/",
+            "romfs:/",
+            "/"
+        };
+
+        internal static string GetLibnxRoot(ReadOnlySpan<char> path)
+        {
+             foreach (string root in LibnxPathRoots)
+                if (path.StartsWith(root.AsSpan()))
+                    return root;
+
+            return string.Empty;
+        }
+#endif
+
         internal static int GetRootLength(ReadOnlySpan<char> path)
         {
+#if TARGET_LIBNX
+            return GetLibnxRoot(path).Length;
+#else
             return path.Length > 0 && IsDirectorySeparator(path[0]) ? 1 : 0;
+#endif
         }
 
         internal static bool IsDirectorySeparator(char c)

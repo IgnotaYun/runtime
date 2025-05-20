@@ -2,7 +2,7 @@
 #include <mono/utils/mono-compiler.h>
 #include <mono/eglib/glib.h>
 
-#if defined (HOST_WASM)
+#if defined (HOST_WASM) || HOST_LIBNX
 
 #include "mono/utils/mono-dl.h"
 #include "mono/utils/mono-path.h"
@@ -13,7 +13,11 @@
 #include <string.h>
 #include <glib.h>
 
-#ifndef HOST_WASI
+#if HOST_LIBNX
+#define HOST_WASI 1
+#endif
+
+#ifndef HOST_WASI 
 #include <dlfcn.h>
 #endif
 

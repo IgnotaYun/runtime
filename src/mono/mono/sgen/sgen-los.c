@@ -25,6 +25,10 @@
 
 #include <string.h>
 
+#ifdef HOST_LIBNX
+#include <switch/types.h>
+#endif
+
 #include "mono/sgen/sgen-gc.h"
 #include "mono/sgen/sgen-protocol.h"
 #include "mono/sgen/sgen-cardtable.h"

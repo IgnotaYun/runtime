@@ -512,7 +512,7 @@ mono_monoctx_to_sigctx (MonoContext *mctx, void *ctx)
 #endif
 }
 
-#elif (defined(__aarch64__) && !defined(MONO_CROSS_COMPILE)) || (defined(TARGET_ARM64))
+#elif ((defined(__aarch64__) && !defined(MONO_CROSS_COMPILE)) || (defined(TARGET_ARM64))) && !defined(HOST_LIBNX)
 
 #include <mono/utils/mono-context.h>
 #include <mono/utils/ftnptr.h>
@@ -613,7 +613,7 @@ mono_monoctx_to_sigctx (MonoContext *mctx, void *sigctx)
 	UCONTEXT_REG_Rn(uc, 1) = mctx->sc_sp;
 }
 
-#elif defined (TARGET_WASM)
+#elif defined (TARGET_WASM) || HOST_LIBNX
 
 #include <mono/utils/mono-context.h>
 

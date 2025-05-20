@@ -13,7 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+
 #include <termios.h>
+
 #include <unistd.h>
 #include <poll.h>
 #include <pthread.h>

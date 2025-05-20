@@ -21,16 +21,7 @@ set(NATIVE_SOURCES
     pal_sysctl.c
 )
 
-if (NOT CLR_CMAKE_TARGET_WASI)
-    list (APPEND NATIVE_SOURCES
-        pal_dynamicload.c
-        pal_mount.c
-        pal_process.c
-        pal_signal.c
-        pal_threading.c
-        pal_uid.c
-    )
-else()
+if (CLR_CMAKE_TARGET_WASI)
     list (APPEND NATIVE_SOURCES
         pal_dynamicload_wasi.c
         pal_mount_wasi.c
@@ -38,6 +29,24 @@ else()
         pal_signal_wasi.c
         pal_threading_wasi.c
         pal_uid_wasi.c
+    )
+elseif (CLR_CMAKE_TARGET_LIBNX)
+    list (APPEND NATIVE_SOURCES
+        pal_dynamicload_wasi.c
+        pal_mount_wasi.c
+        pal_process_libnx.c
+        pal_signal_wasi.c
+        pal_threading.c
+        pal_uid_wasi.c
+    )
+else()
+    list (APPEND NATIVE_SOURCES
+        pal_dynamicload.c
+        pal_mount.c
+        pal_process.c
+        pal_signal.c
+        pal_threading.c
+        pal_uid.c
     )
 endif()
 
@@ -75,14 +84,14 @@ else()
         pal_log.c
         pal_iossupportversion.c)
 
-    if (CLR_CMAKE_TARGET_WASI)
+    if (CLR_CMAKE_TARGET_WASI OR CLR_CMAKE_TARGET_LIBNX)
         list (APPEND NATIVE_SOURCES pal_console_wasi.c)
     else()
         list (APPEND NATIVE_SOURCES pal_console.c)
     endif()
 endif()
 
-if (NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI)
+if (NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_LIBNX)
     list (APPEND NATIVE_SOURCES pal_networkchange.c)
 endif ()
 

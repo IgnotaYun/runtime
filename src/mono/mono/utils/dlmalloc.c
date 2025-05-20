@@ -1154,6 +1154,10 @@ int mspace_mallopt(int, int);
 
 /*------------------------------ internal #includes ---------------------- */
 
+#if HOST_LIBNX
+#define HAVE_MMAP 0
+#endif
+
 #ifdef _MSC_VER
 #pragma warning( disable : 4146 ) /* no "unsigned" warnings */
 #endif /* WIN32 */

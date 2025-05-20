@@ -129,17 +129,17 @@ and reduce the number of casts drastically.
 // #define USE_SIGNALS_ON_MACH
 
 #ifdef HOST_WASM
-#define USE_WASM_BACKEND
-#elif defined (_POSIX_VERSION)
-#if defined (__MACH__) && !defined (USE_SIGNALS_ON_MACH)
-#define USE_MACH_BACKEND
-#else
-#define USE_POSIX_BACKEND
+	#define USE_WASM_BACKEND
+#elif defined (_POSIX_VERSION) || defined(HOST_LIBNX)
+	#if defined (__MACH__) && !defined (USE_SIGNALS_ON_MACH)
+		#define USE_MACH_BACKEND
+	#else
+		#define USE_POSIX_BACKEND
 #endif
 #elif HOST_WIN32
-#define USE_WINDOWS_BACKEND
+	#define USE_WINDOWS_BACKEND
 #else
-#error "no backend support for current platform"
+	#error "no backend support for current platform"
 #endif /* defined (_POSIX_VERSION) */
 
 enum {

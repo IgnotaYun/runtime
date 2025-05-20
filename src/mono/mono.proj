@@ -44,6 +44,9 @@
     <MonoUseCrossTool Condition="'$(TargetstvOS)' == 'true' or '$(TargetsiOS)' == 'true' or '$(TargetsMacCatalyst)' == 'true'">true</MonoUseCrossTool>
     <MonoUseCrossTool Condition="'$(TargetsLinux)' == 'true' and '$(Platform)' == 'arm64'">true</MonoUseCrossTool>
     <MonoUseCrossTool Condition="'$(MonoUseCrossTool)' == 'true' and '$(BuildMonoAOTCrossCompilerOnly)' == 'true' and '$(MonoGenerateOffsetsOSGroups)' == ''">false</MonoUseCrossTool>
+    <!-- HACK: there must be something missing in the build system. When this condition is true building the runtime fails because cmake mixes up the toolchains -->
+    <!-- So i set the BuildMonoAOTCrossCompilerOnly flag to only take the cross compiler path when it's excplicitly enabled -->
+    <BuildMonoAOTCrossCompiler Condition="'$(TargetsLibnx)' == 'true' and '$(BuildMonoAOTCrossCompilerOnly)' == 'true'">true</BuildMonoAOTCrossCompiler>
     <MonoObjCrossDir>$([MSBuild]::NormalizeDirectory('$(MonoObjDir)', 'cross'))</MonoObjCrossDir>
     <CrossConfigH Condition="'$(BuildMonoAOTCrossCompiler)' == 'true'">$([MSBuild]::NormalizePath('$(MonoObjCrossDir)', 'config.h'))</CrossConfigH>
     <MonoBundleLLVMOptimizer Condition="'$(MonoEnableLLVM)' == 'true'">true</MonoBundleLLVMOptimizer>
@@ -63,6 +66,7 @@
   <!-- default thread suspend for specific platforms -->
   <PropertyGroup>
     <MonoThreadSuspend Condition="'$(TargetswatchOS)' == 'true' and '$(MonoThreadSuspend)' == ''">coop</MonoThreadSuspend>
+        <MonoThreadSuspend Condition="'$(TargetsLibnx)' == 'true' and '$(MonoThreadSuspend)' == ''">coop</MonoThreadSuspend>
     <MonoThreadSuspend Condition="'$(TargetsBrowser)' == 'true' and '$(WasmEnableThreads)' == 'true' and '$(MonoThreadSuspend)' == ''">coop</MonoThreadSuspend>
     <!-- wasm isn't really preemptive, but we don't want safepoints -->
     <MonoThreadSuspend Condition="( '$(TargetsBrowser)' == 'true' or '$(TargetsWasi)' == 'true' ) and '$(MonoThreadSuspend)' == ''">preemptive</MonoThreadSuspend>
@@ -490,6 +494,12 @@ JS_ENGINES = [NODE_JS]
       <_MonoBuildEnv Include="TARGET_BUILD_ARCH=arm64" />
     </ItemGroup>
 
+    <!-- ARM64 libnx cross build options -->
+    <ItemGroup Condition="'$(TargetsLibnx)' == 'true' and '$(MonoCrossDir)' != ''">
+      <_MonoCMakeArgs Include="-DCMAKE_TOOLCHAIN_FILE=$(CrossToolchainFile)" />
+      <_MonoBuildEnv Include="TARGET_BUILD_ARCH=arm64" />
+    </ItemGroup>
+
     <!-- Windows specific options -->
     <ItemGroup Condition="'$(TargetsWindows)' == 'true'">
       <_MonoCPPFLAGS Include="-DWIN32" />
@@ -687,6 +697,12 @@ JS_ENGINES = [NODE_JS]
       <_MonoCMakeArgs Include="-DFEATURE_PERFTRACING_DISABLE_DEFAULT_LISTEN_PORT=1"/>
     </ItemGroup>
 
+    <ItemGroup Condition="'$(TargetsLibnx)' == 'true'">
+      <_MonoCMakeArgs Include="-DFEATURE_PERFTRACING_PAL_TCP=1"/>
+      <_MonoCMakeArgs Include="-DFEATURE_PERFTRACING_DISABLE_DEFAULT_LISTEN_PORT=1"/>
+      <_MonoBuildEnv Include="TARGET_BUILD_ARCH=arm64" />
+    </ItemGroup>
+
     <ItemGroup Condition="'$(TargetsWasi)' == 'true'">
       <_MonoCMakeArgs Include="-DFEATURE_PERFTRACING_DISABLE_PERFTRACING_LISTEN_PORTS=1"/>
       <_MonoCMakeArgs Include="-DFEATURE_PERFTRACING_DISABLE_DEFAULT_LISTEN_PORT=1"/>
@@ -813,6 +829,14 @@ JS_ENGINES = [NODE_JS]
       <MonoAotAbi>aarch64-linux-gnu</MonoAotAbi>
       <MonoAotOffsetsFile>$(MonoObjCrossDir)offsets-aarch-linux-gnu.h</MonoAotOffsetsFile>
       <MonoAotOffsetsPrefix>$(MonoCrossDir)/usr/lib/gcc/aarch64-linux-gnu/7</MonoAotOffsetsPrefix>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(TargetsLibnx)' == 'true' and '$(Platform)' == 'arm64'">
+      <MonoUseCrossTool>true</MonoUseCrossTool>
+      <MonoAotAbi>aarch64-none-elf</MonoAotAbi>
+      <MonoAotOffsetsFile>$(MonoObjCrossDir)offsets-aarch64-none-elf.h</MonoAotOffsetsFile>
+      <MonoAotOffsetsPrefix>$(MonoCrossDir)/devkitA64/bin/aarch64-none-elf</MonoAotOffsetsPrefix>
+      <MonoAotCMakeSysroot>$(MonoCrossDir)</MonoAotCMakeSysroot>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(MonoUseLLVMPackage)' == 'true'">

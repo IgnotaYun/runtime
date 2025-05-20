@@ -33,7 +33,7 @@
 #include <glib.h>
 #include <gmodule.h>
 
-#if defined(G_OS_UNIX) && defined(HAVE_DLFCN_H)
+#if defined(G_OS_UNIX) && defined(HAVE_DLFCN_H) && !defined(HOST_LIBNX)
 #include <dlfcn.h>
 
 /* For Linux and Solaris, need to add others as we port this */

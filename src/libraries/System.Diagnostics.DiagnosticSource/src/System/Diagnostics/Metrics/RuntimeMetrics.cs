@@ -146,7 +146,7 @@ namespace System.Diagnostics.Metrics
                 unit: "{cpu}",
                 description: "The number of processors available to the process.");
 
-            if (!OperatingSystem.IsBrowser() && !OperatingSystem.IsWasi() && !OperatingSystem.IsTvOS() && !(OperatingSystem.IsIOS() && !OperatingSystem.IsMacCatalyst()))
+            if (!OperatingSystem.IsOSPlatform("libnx") && !OperatingSystem.IsBrowser() && !OperatingSystem.IsWasi() && !OperatingSystem.IsTvOS() && !(OperatingSystem.IsIOS() && !OperatingSystem.IsMacCatalyst()))
             {
                 s_meter.CreateObservableCounter(
                     "dotnet.process.cpu.time",

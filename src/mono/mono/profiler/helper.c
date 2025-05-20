@@ -28,6 +28,9 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #endif
+#ifdef HOST_LIBNX
+#include <arpa/inet.h>
+#endif
 
 #include "helper.h"
 

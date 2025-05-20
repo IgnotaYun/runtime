@@ -35,9 +35,10 @@ mono_arch_get_gsharedvt_arg_trampoline (gpointer arg, gpointer addr)
 	 * Return a trampoline which calls ADDR passing in ARG.
 	 * Pass the argument in ip1, clobbering ip0.
 	 */
-	buf = code = mono_global_codeman_reserve (buf_len);
+	code = mono_global_codeman_reserve (buf_len);
 
-	MINI_BEGIN_CODEGEN ();
+	MINI_BEGIN_CODEGEN_EX (code);
+	buf = code;
 
 	code = mono_arm_emit_imm64 (code, ARMREG_IP1, (guint64)arg);
 	code = mono_arm_emit_imm64 (code, ARMREG_IP0, (guint64)addr);
@@ -46,7 +47,7 @@ mono_arch_get_gsharedvt_arg_trampoline (gpointer arg, gpointer addr)
 
 	g_assert ((code - buf) < buf_len);
 
-	MINI_END_CODEGEN (buf, GPTRDIFF_TO_INT (code - buf), -1, NULL);
+	MINI_END_CODEGEN_EX (buf, GPTRDIFF_TO_INT (code - buf), -1, NULL);
 
 	return buf;
 }
@@ -228,7 +229,7 @@ mono_arch_get_gsharedvt_trampoline (MonoTrampInfo **info, gboolean aot)
 	int br_ret_index, bcc_ret_index;
 
 	buf_len = 2048;
-	buf = code = mono_global_codeman_reserve (buf_len);
+	code = mono_global_codeman_reserve (buf_len);
 
 	/*
 	 * We are being called by an gsharedvt arg trampoline, the info argument is in IP1.
@@ -258,7 +259,8 @@ mono_arch_get_gsharedvt_trampoline (MonoTrampInfo **info, gboolean aot)
 
 	cfa_offset = offset;
 
-	MINI_BEGIN_CODEGEN ();
+	MINI_BEGIN_CODEGEN_EX (code);
+	buf = code;
 
 	/* Setup frame */
 	arm_stpx_pre (code, ARMREG_FP, ARMREG_LR, ARMREG_SP, -cfa_offset);
@@ -556,10 +558,11 @@ mono_arch_get_gsharedvt_trampoline (MonoTrampInfo **info, gboolean aot)
 
 	g_assert ((code - buf) < buf_len);
 
-	if (info)
-		*info = mono_tramp_info_create ("gsharedvt_trampoline", buf, GPTRDIFF_TO_UINT32 (code - buf), ji, unwind_ops);
+	gint32 size = GPTRDIFF_TO_INT (code - buf);
+	MINI_END_CODEGEN_EX(buf, size, -1, NULL);
 
-	MINI_END_CODEGEN (buf, GPTRDIFF_TO_INT (code - buf), -1, NULL);
+	if (info)
+		*info = mono_tramp_info_create ("gsharedvt_trampoline", buf, size, ji, unwind_ops);
 
 	return buf;
 }

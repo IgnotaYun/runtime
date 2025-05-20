@@ -97,7 +97,7 @@
 #endif
 #include "mono/utils/mono-tls-inline.h"
 
-#if defined(HOST_WATCHOS)
+#if defined(HOST_WATCHOS) || defined(HOST_LIBNX)
 
 void
 mono_runtime_setup_stat_profiler (void)

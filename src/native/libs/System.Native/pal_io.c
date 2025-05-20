@@ -16,7 +16,10 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if !defined(TARGET_LIBNX)
 #include <sys/mman.h>
+#include <sys/uio.h>
+#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -26,7 +29,6 @@
 #if !HAVE_MAKEDEV_FILEH && HAVE_MAKEDEV_SYSMACROSH
 #include <sys/sysmacros.h>
 #endif
-#include <sys/uio.h>
 #if HAVE_SYSLOG_H
 #include <syslog.h>
 #endif
@@ -744,7 +746,7 @@ int32_t SystemNative_FSync(intptr_t fd)
 int32_t SystemNative_FLock(intptr_t fd, int32_t operation)
 {
     int32_t result;
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     while ((result = flock(ToFileDescriptor(fd), operation)) < 0 && errno == EINTR);
 #else /* TARGET_WASI */
     result = EINTR;
@@ -799,7 +801,7 @@ int32_t SystemNative_SymLink(const char* target, const char* linkPath)
 
 void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint32_t* minorNumber)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     dev_t castedDev = (dev_t)dev;
     *majorNumber = (uint32_t)major(castedDev);
     *minorNumber = (uint32_t)minor(castedDev);
@@ -812,7 +814,7 @@ void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint
 
 int32_t SystemNative_MkNod(const char* pathName, uint32_t mode, uint32_t major, uint32_t minor)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     dev_t dev = (dev_t)makedev(major, minor);
 
     int32_t result;
@@ -825,7 +827,7 @@ int32_t SystemNative_MkNod(const char* pathName, uint32_t mode, uint32_t major, 
 
 int32_t SystemNative_MkFifo(const char* pathName, uint32_t mode)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     int32_t result;
     while ((result = mkfifo(pathName, (mode_t)mode)) < 0 && errno == EINTR);
     return result;
@@ -884,7 +886,7 @@ intptr_t SystemNative_MksTemps(char* pathTemplate, int32_t suffixLength)
     {
         pathTemplate[firstSuffixIndex] = firstSuffixChar;
     }
-#elif TARGET_WASI
+#elif TARGET_WASI || TARGET_LIBNX
     assert_msg(false, "Not supported on WASI", 0);
     result = -1;
 #else
@@ -893,6 +895,7 @@ intptr_t SystemNative_MksTemps(char* pathTemplate, int32_t suffixLength)
     return  result;
 }
 
+#if !defined(TARGET_LIBNX)
 static int32_t ConvertMMapProtection(int32_t protection)
 {
     if (protection == PAL_PROT_NONE)
@@ -1000,6 +1003,29 @@ void* SystemNative_MMap(void* address,
     assert(ret != NULL);
     return ret;
 }
+#else
+void* SystemNative_MMap(void* address,
+                      uint64_t length,
+                      int32_t protection, // bitwise OR of PAL_PROT_*
+                      int32_t flags,      // bitwise OR of PAL_MAP_*, but PRIVATE and SHARED are mutually exclusive.
+                      intptr_t fd,
+                      int64_t offset)
+{
+    if (length > SIZE_MAX)
+    {
+        errno = ERANGE;
+        return NULL;
+    }
+
+    if (protection & PAL_PROT_EXEC || fd > 0)
+    {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    return malloc(length);
+}
+#endif
 
 int32_t SystemNative_MUnmap(void* address, uint64_t length)
 {
@@ -1009,7 +1035,12 @@ int32_t SystemNative_MUnmap(void* address, uint64_t length)
         return -1;
     }
 
+#if defined(TARGET_LIBNX)
+    free(address);
+    return 0;
+#else
     return munmap(address, (size_t)length);
+#endif
 }
 
 int32_t SystemNative_MProtect(void* address, uint64_t length, int32_t protection)
@@ -1020,9 +1051,18 @@ int32_t SystemNative_MProtect(void* address, uint64_t length, int32_t protection
         return -1;
     }
 
-    protection = ConvertMMapProtection(protection);
+#if defined(TARGET_LIBNX)
+    if (protection & PAL_PROT_EXEC)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
+    return 0;
+#else
+    protection = ConvertMMapProtection(protection);
     return mprotect(address, (size_t)length, protection);
+#endif
 }
 
 int32_t SystemNative_MAdvise(void* address, uint64_t length, int32_t advice)
@@ -1036,7 +1076,7 @@ int32_t SystemNative_MAdvise(void* address, uint64_t length, int32_t advice)
     switch (advice)
     {
         case PAL_MADV_DONTFORK:
-#if defined(MADV_DONTFORK) && !defined(TARGET_WASI)
+#if defined(MADV_DONTFORK) && !defined(TARGET_WASI) 
             return madvise(address, (size_t)length, MADV_DONTFORK);
 #else
             (void)address, (void)length, (void)advice;
@@ -1059,7 +1099,8 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
         errno = ERANGE;
         return -1;
     }
-
+    
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     flags = ConvertMSyncFlags(flags);
     if (flags == -1)
     {
@@ -1067,7 +1108,6 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
         return -1;
     }
 
-#if !defined(TARGET_WASI)
     return msync(address, (size_t)length, flags);
 #else
     return -1;
@@ -1076,6 +1116,7 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
 
 int64_t SystemNative_SysConf(int32_t name)
 {
+    #if !defined(TARGET_LIBNX)
     switch (name)
     {
         case PAL_SC_CLK_TCK:
@@ -1085,6 +1126,7 @@ int64_t SystemNative_SysConf(int32_t name)
         default:
             break; // fall through to error
     }
+    #endif
 
     assert_msg(false, "Unknown SysConf name", (int)name);
     errno = EINVAL;
@@ -1213,7 +1255,7 @@ int32_t SystemNative_RmDir(const char* path)
 
 void SystemNative_Sync(void)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     sync();
 #endif /* TARGET_WASI */
 }
@@ -1560,7 +1602,7 @@ static int16_t ConvertLockType(int16_t managedLockType)
     }
 }
 
-#if !HAVE_NON_LEGACY_STATFS || defined(TARGET_APPLE) || defined(TARGET_FREEBSD)
+#if !HAVE_NON_LEGACY_STATFS || defined(TARGET_APPLE) || defined(TARGET_FREEBSD) || defined(TARGET_LIBNX)
 static uint32_t MapFileSystemNameToEnum(const char* fileSystemName)
 {
     uint32_t result = 0;
@@ -1721,6 +1763,9 @@ uint32_t SystemNative_GetFileSystemType(intptr_t fd)
 #endif
 #elif defined(TARGET_WASI)
     return EINTR;
+#elif defined(TARGET_LIBNX)
+    // On libnx, we don't have a way to get the filesystem type.
+    return MapFileSystemNameToEnum("fat");
 #elif !HAVE_NON_LEGACY_STATFS
     int statfsRes;
     struct statvfs statfsArgs;

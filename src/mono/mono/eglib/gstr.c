@@ -64,7 +64,7 @@ g_strndup (const gchar *str, gsize n)
 
 gint g_vasprintf (gchar **ret, const gchar *fmt, va_list ap)
 {
-#if defined (HAVE_VASPRINTF) && !defined (ENABLE_OVERRIDABLE_ALLOCATORS)
+#if defined (HAVE_VASPRINTF) && !defined (ENABLE_OVERRIDABLE_ALLOCATORS) && !defined(HOST_LIBNX)
   return vasprintf (ret, fmt, ap);
 #else
 	char *buf;

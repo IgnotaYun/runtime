@@ -711,8 +711,29 @@ void mono_chain_signal_to_default_sigsegv_handler (void);
 
 void mini_register_sigterm_handler (void);
 
+// HACK: this overwrites code with a possibly different address needed for writing....
+#define MINI_BEGIN_CODEGEN_EX(code) do { \
+	code = mono_codeman_enable_write_ex (code, G_STRLOC); \
+	g_assert (code); \
+	} while (0)
+
+#define MINI_END_CODEGEN_EX(buf,size,type,arg) do { \
+	MONO_DISABLE_WARNING(4127) /* conditional expression is constant */ \
+	gint32 __size = (size); \
+	buf = mono_codeman_disable_write_ex (buf, G_STRLOC); \
+	mono_arch_flush_icache ((buf), __size); \
+	if ((int)type != -1) \
+		MONO_PROFILER_RAISE (jit_code_buffer, ((buf), __size, (MonoProfilerCodeBufferType)(type), (arg))); \
+	MONO_RESTORE_WARNING \
+	} while (0)
+
+#if defined(HOST_LIBNX) && !HOST_LIBNX
+#pragma error "Libnx definitions are misconfigured"
+#endif
+
+#if !HOST_LIBNX
 #define MINI_BEGIN_CODEGEN() do { \
-	mono_codeman_enable_write (); \
+	mono_codeman_enable_write (a); \
 	} while (0)
 
 #define MINI_END_CODEGEN(buf,size,type,arg) do { \
@@ -723,6 +744,7 @@ void mini_register_sigterm_handler (void);
 		MONO_PROFILER_RAISE (jit_code_buffer, ((buf), (size), (MonoProfilerCodeBufferType)(type), (arg))); \
 	MONO_RESTORE_WARNING \
 	} while (0)
+#endif
 
 typedef void (*MonoRuntimeInitCallback) (void);
 

@@ -36,15 +36,16 @@
 
 #include <errno.h>
 
-#if defined(_POSIX_VERSION) && !defined (HOST_WASM)
+#if (defined(_POSIX_VERSION) && !defined (HOST_WASM)) || defined(HOST_LIBNX)
+	#include <pthread.h>
 
-#include <pthread.h>
+	#ifndef HOST_LIBNX
+		#include <sys/mman.h>
+	#endif
 
-#include <sys/mman.h>
-
-#ifdef HAVE_SYS_RESOURCE_H
-#include <sys/resource.h>
-#endif
+	#ifdef HAVE_SYS_RESOURCE_H
+		#include <sys/resource.h>
+	#endif
 
 static pthread_mutex_t memory_barrier_process_wide_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void *memory_barrier_process_wide_helper_page;
@@ -137,7 +138,7 @@ mono_threads_platform_exit (gsize exit_code)
 	pthread_exit ((gpointer) exit_code);
 }
 
-#if HOST_FUCHSIA
+#if HOST_FUCHSIA || HOST_LIBNX
 int
 mono_thread_info_get_system_max_stack_size (void)
 {

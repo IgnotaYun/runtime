@@ -29,6 +29,14 @@ static void* mono_code_manager_heap;
 #include <mono/utils/mono-os-mutex.h>
 #include <mono/utils/mono-tls.h>
 
+#include "mono-logger-internals.h"
+
+#if HOST_LIBNX
+#include "mono-codeman-libnx.h"
+#endif
+
+#include "../mini/mini-runtime.h"
+
 static uintptr_t code_memory_used = 0;
 static size_t dynamic_code_alloc_count;
 static size_t dynamic_code_bytes_count;
@@ -79,8 +87,67 @@ enum {
 	CODE_FLAG_MALLOC
 };
 
-struct _CodeChunk {
+struct _CodeChunkArea
+{
+	// When this is plain malloc, this is a normal pointer
+	// However, on libnx this is NULL when it's a JIT area and the effective address is in jitHandle
+	// On code shared between all platforms use the codearea_* functions.
+	// On non-libnx platforms .data has no special meaning and it's the raw address of the memory
 	char *data;
+	#if HOST_LIBNX
+	JitAreaNode* jitHandle;
+	#endif
+};
+
+static inline bool codearea_is_plain(const struct _CodeChunkArea* code)
+{
+	#if HOST_LIBNX
+	return code->data != NULL;
+	#else
+	return true;
+	#endif
+}
+
+// On platforms where RWX is supported, this returns the addr value
+// On LIBNX this returns the RX address by convention, all codeman functions that take a pointer for JIT purposes assume that's the rx view of the memory area, unless otherwise specified
+static inline void* codearea_addr_exec(const struct _CodeChunkArea* code)
+{
+	#if HOST_LIBNX
+	if (code->jitHandle)
+		return code->jitHandle->nativeJit.rx_addr;
+	#endif
+	return code->data;
+}
+
+static inline void* codearea_addr_write(const struct _CodeChunkArea* code)
+{
+	#if HOST_LIBNX
+	if (code->jitHandle)
+		return code->jitHandle->nativeJit.rw_addr;
+	#endif
+	return code->data;
+}
+
+static inline bool codearea_is_ok(const struct _CodeChunkArea* code)
+{
+	if (!code)
+	{
+		mono_trace_error (MONO_TRACE_SECURITY, "codechunk is NULL. This should never happen.");
+		return false;
+	}
+
+	if (code->data)
+		return true;
+
+#if HOST_LIBNX
+	return code->jitHandle != NULL;
+#endif
+
+	return false;
+}
+
+struct _CodeChunk {
+	struct _CodeChunkArea code;
 	CodeChunk *next;
 	int pos;
 	int size;
@@ -106,6 +173,21 @@ static mono_mutex_t valloc_mutex;
 static GHashTable *valloc_freelists;
 static MonoNativeTlsKey write_level_tls_id;
 
+#if HOST_LIBNX
+static void*
+codechunk_valloc (void *preferred, guint32 size, gboolean no_exec)
+{
+	mono_trace_error (MONO_TRACE_SECURITY, "codechunk_valloc called on libnx platform. This is not supported");
+	return 0;
+}
+
+static void
+codechunk_vfree (void *ptr, guint32 size)
+{
+	mono_trace_error (MONO_TRACE_SECURITY, "codechunk_vfree called on libnx platform. This is not supported");
+	// No-op
+}
+#else
 static void*
 codechunk_valloc (void *preferred, guint32 size, gboolean no_exec)
 {
@@ -158,6 +240,7 @@ codechunk_vfree (void *ptr, guint32 size)
 	}
 	mono_os_mutex_unlock (&valloc_mutex);
 }
+#endif
 
 static void
 codechunk_cleanup (void)
@@ -226,7 +309,7 @@ static
 int
 mono_codeman_allocation_type (MonoCodeManager const *cman)
 {
-#ifdef FORCE_MALLOC
+#if defined(FORCE_MALLOC) || HOST_LIBNX
 	return CODE_FLAG_MALLOC;
 #else
 	return cman->dynamic ? CODE_FLAG_MALLOC : CODE_FLAG_MMAP;
@@ -338,33 +421,60 @@ mono_code_manager_new_aot (void)
 	return mono_code_manager_new_internal (MONO_CODEMAN_TYPE_AOT);
 }
 
-static gpointer
-mono_codeman_malloc (gsize n)
+static struct _CodeChunkArea
+mono_codeman_malloc (gsize n, bool is_executable)
 {
+	struct _CodeChunkArea res = { 0 };
+
 #if _WIN32
 	void* const heap = mono_code_manager_heap;
 	g_assert (heap);
-	return HeapAlloc (heap, 0, n);
+	res.data = HeapAlloc (heap, 0, n);
+#elif HOST_LIBNX
+	if (is_executable)
+	{
+		res.jitHandle = nx_jit_new (n);
+	}
+	else
+	{
+		// TODO: We are currently ignoring alignment here
+		res.data = malloc(n);
+		if (!res.data)
+			mono_trace_error(MONO_TRACE_DIAGNOSTICS, "aligned_alloc failed size=%lx", n);
+			
+		mono_trace_message(MONO_TRACE_DIAGNOSTICS, "codeman plain alloc size=%lx addr=%p", n, res.data);
+	}
 #else
 	mono_codeman_enable_write ();
-	gpointer res = dlmemalign (MIN_ALIGN, n);
+	res.data = dlmemalign (MIN_ALIGN, n);
 	mono_codeman_disable_write ();
-	return res;
 #endif
+	return res;
 }
 
 static void
-mono_codeman_free (gpointer p)
+mono_codeman_free (struct _CodeChunkArea* p)
 {
-	if (!p)
+	if (!codearea_is_ok(p))
 		return;
 #if _WIN32
 	void* const heap = mono_code_manager_heap;
 	g_assert (heap);
-	HeapFree (heap, 0, p);
+	HeapFree (heap, 0, p.data);
+#elif HOST_LIBNX
+	if (p->data)
+	{
+		free (p->data);
+		p->data = NULL;
+	}
+	else
+	{
+		nx_jit_free (p->jitHandle);
+		p->jitHandle = NULL;
+	}
 #else
 	mono_codeman_enable_write ();
-	dlfree (p);
+	dlfree (p->data);
 	mono_codeman_disable_write ();
 #endif
 }
@@ -390,15 +500,16 @@ free_chunklist (MonoCodeManager *cman, CodeChunk *chunk)
 
 	for (; chunk; ) {
 		dead = chunk;
-		MONO_PROFILER_RAISE (jit_chunk_destroyed, ((mono_byte *) dead->data));
+		void* address = codearea_addr_exec(&dead->code);
+		MONO_PROFILER_RAISE (jit_chunk_destroyed, ((mono_byte *)address));
 		if (code_manager_callbacks)
-			code_manager_callbacks->chunk_destroy (dead->data);
+			code_manager_callbacks->chunk_destroy (address);
 		chunk = chunk->next;
 		if (flags == CODE_FLAG_MMAP) {
-			codechunk_vfree (dead->data, dead->size);
+			codechunk_vfree (dead->code.data, dead->size);
 			/* valgrind_unregister(dead->data); */
 		} else if (flags == CODE_FLAG_MALLOC) {
-			mono_codeman_free (dead->data);
+			mono_codeman_free (&dead->code);
 		}
 		code_memory_used -= dead->size;
 		g_free (dead);
@@ -439,9 +550,9 @@ mono_code_manager_invalidate (MonoCodeManager *cman)
 #endif
 
 	for (chunk = cman->current; chunk; chunk = chunk->next)
-		memset (chunk->data, fill_value, chunk->size);
+		memset (codearea_addr_write(&chunk->code), fill_value, chunk->size);
 	for (chunk = cman->full; chunk; chunk = chunk->next)
-		memset (chunk->data, fill_value, chunk->size);
+		memset (codearea_addr_write(&chunk->code), fill_value, chunk->size);
 }
 
 /**
@@ -468,11 +579,11 @@ mono_code_manager_foreach (MonoCodeManager *cman, MonoCodeManagerFunc func, void
 {
 	CodeChunk *chunk;
 	for (chunk = cman->current; chunk; chunk = chunk->next) {
-		if (func (chunk->data, chunk->size, chunk->bsize, user_data))
+		if (func (codearea_addr_exec(&chunk->code), chunk->size, chunk->bsize, user_data))
 			return;
 	}
 	for (chunk = cman->full; chunk; chunk = chunk->next) {
-		if (func (chunk->data, chunk->size, chunk->bsize, user_data))
+		if (func (codearea_addr_exec(&chunk->code), chunk->size, chunk->bsize, user_data))
 			return;
 	}
 }
@@ -497,7 +608,7 @@ new_codechunk (MonoCodeManager *cman, int size)
 	int const no_exec = cman->no_exec;
 	int chunk_size, bsize = 0;
 	CodeChunk *chunk;
-	void *ptr;
+	struct _CodeChunkArea ptr = { 0 };
 
 	const int flags = mono_codeman_allocation_type (cman);
 	const int pagesize = mono_pagesize ();
@@ -540,46 +651,56 @@ new_codechunk (MonoCodeManager *cman, int size)
 #endif
 
 	if (flags == CODE_FLAG_MALLOC) {
-		ptr = mono_codeman_malloc (chunk_size + MIN_ALIGN - 1);
-		if (!ptr)
+		ptr = mono_codeman_malloc (chunk_size + MIN_ALIGN - 1, !no_exec);
+		if (!codearea_is_ok(&ptr))
 			return NULL;
 	} else {
 		/* Try to allocate code chunks next to each other to help the VM */
-		ptr = NULL;
+		ptr.data = NULL;
 		if (last)
-			ptr = codechunk_valloc ((guint8*)last->data + last->size, chunk_size, no_exec);
-		if (!ptr)
-			ptr = codechunk_valloc (NULL, chunk_size, no_exec);
-		if (!ptr)
+			ptr.data = codechunk_valloc ((guint8*)last->code.data + last->size, chunk_size, no_exec);
+		if (!ptr.data)
+			ptr.data = codechunk_valloc (NULL, chunk_size, no_exec);
+		if (!ptr.data)
 			return NULL;
 	}
 
 #ifdef BIND_ROOM
 	if (flags == CODE_FLAG_MALLOC) {
 		/* Make sure the thunks area is zeroed */
+#if !HOST_LIBNX
 		mono_codeman_enable_write ();
-		memset (ptr, 0, bsize);
+		memset (ptr.data, 0, bsize);
 		mono_codeman_disable_write ();
+#else		
+		// On libnx, only memset if this is a plain malloc area
+		if (codearea_is_plain(&ptr)) 
+			memset (ptr.data, 0, bsize);
+#endif
 	}
 #endif
 
 	chunk = (CodeChunk *) g_malloc (sizeof (CodeChunk));
 	if (!chunk) {
 		if (flags == CODE_FLAG_MALLOC)
-			mono_codeman_free (ptr);
+			mono_codeman_free (&ptr);
 		else
-			mono_vfree (ptr, chunk_size, MONO_MEM_ACCOUNT_CODE);
+			mono_vfree (ptr.data, chunk_size, MONO_MEM_ACCOUNT_CODE);
 		return NULL;
 	}
 	chunk->next = NULL;
 	chunk->size = chunk_size;
-	chunk->data = (char *) ptr;
+#if HOST_LIBNX
+	if (!codearea_is_plain(&ptr))
+		chunk->size = ptr.jitHandle->nativeJit.size;
+#endif
+	chunk->code = ptr;
 	chunk->reserved = 0;
 	chunk->pos = bsize;
 	chunk->bsize = bsize;
 	if (code_manager_callbacks)
-		code_manager_callbacks->chunk_new (chunk->data, chunk->size);
-	MONO_PROFILER_RAISE (jit_chunk_created, ((mono_byte *) chunk->data, chunk->size));
+		code_manager_callbacks->chunk_new (codearea_addr_exec(&chunk->code), chunk->size);
+	MONO_PROFILER_RAISE (jit_chunk_created, ((mono_byte *) codearea_addr_exec(&chunk->code), chunk->size));
 
 	code_memory_used += chunk_size;
 	mono_runtime_resource_check_limit (MONO_RESOURCE_JIT_CODE, code_memory_used);
@@ -593,7 +714,7 @@ new_codechunk (MonoCodeManager *cman, int size)
  * \param size size of memory to allocate
  * \param alignment power of two alignment value
  * Allocates at least \p size bytes of memory inside the code manager \p cman.
- * \returns the pointer to the allocated memory or NULL on failure
+ * \returns the pointer to the allocated memory or NULL on failure. On libnx this is the rx address, so that it can be used to call mono_codeman_enable_write_ex()
  */
 void*
 mono_code_manager_reserve_align (MonoCodeManager *cman, int size, int alignment)
@@ -626,8 +747,9 @@ mono_code_manager_reserve_align (MonoCodeManager *cman, int size, int alignment)
 			chunk->pos = ALIGN_INT (chunk->pos, alignment);
 			/* Align the chunk->data we add to chunk->pos */
 			/* or we can't guarantee proper alignment     */
-			ptr = (void*)((((uintptr_t)chunk->data + align_mask) & ~(uintptr_t)align_mask) + chunk->pos);
-			chunk->pos = GPTRDIFF_TO_INT (((char*)ptr - chunk->data) + size);
+			char* address = codearea_addr_exec(&chunk->code);
+			ptr = (void*)((((uintptr_t)address + align_mask) & ~(uintptr_t)align_mask) + chunk->pos);
+			chunk->pos = GPTRDIFF_TO_INT (((char*)ptr - address) + size);
 			return ptr;
 		}
 	}
@@ -657,8 +779,9 @@ mono_code_manager_reserve_align (MonoCodeManager *cman, int size, int alignment)
 	chunk->pos = ALIGN_INT (chunk->pos, alignment);
 	/* Align the chunk->data we add to chunk->pos */
 	/* or we can't guarantee proper alignment     */
-	ptr = (void*)((((uintptr_t)chunk->data + align_mask) & ~(uintptr_t)align_mask) + chunk->pos);
-	chunk->pos = GPTRDIFF_TO_INT (((char*)ptr - chunk->data) + size);
+	char* address = codearea_addr_exec(&chunk->code);
+	ptr = (void*)((((uintptr_t)address + align_mask) & ~(uintptr_t)align_mask) + chunk->pos);
+	chunk->pos = GPTRDIFF_TO_INT (((char*)ptr - address) + size);
 	return ptr;
 }
 
@@ -678,7 +801,7 @@ mono_code_manager_reserve (MonoCodeManager *cman, int size)
 /**
  * mono_code_manager_commit:
  * \param cman a code manager
- * \param data the pointer returned by mono_code_manager_reserve ()
+ * \param data the pointer returned by mono_codeman_enable_write_ex(). On libnx this is the rw view of a jit area (or the raw data pointer if this is not a dynamic code manager), on other platforms this matches with the pointer returned by mono_code_manager_reserve ()
  * \param size the size requested in the call to mono_code_manager_reserve ()
  * \param newsize the new size to reserve
  * If we reserved too much room for a method and we didn't allocate
@@ -690,7 +813,17 @@ mono_code_manager_commit (MonoCodeManager *cman, void *data, int size, int newsi
 {
 	g_assert (newsize <= size);
 
-	if (cman->current && (size != newsize) && (data == cman->current->data + cman->current->pos - size)) {
+	// Can this ever happen?
+	if (!cman->current)
+		return;
+
+	bool isPlain = codearea_is_plain(&cman->current->code);
+	char* baseAddr = codearea_addr_exec(&cman->current->code);
+
+	// Ensure our math is right
+	mono_trace(G_LOG_LEVEL_DEBUG, MONO_TRACE_DIAGNOSTICS, "mono_code_manager_commit: data=%p plain=%d rx=%p", data, isPlain, baseAddr);
+
+	if (size != newsize && (data == baseAddr + cman->current->pos - size)) {
 		cman->current->pos -= size - newsize;
 	}
 }
@@ -734,6 +867,11 @@ mono_codeman_enable_write (void)
 {
 	if (codeman_no_exec)
 		return;
+
+#if HOST_LIBNX
+	mono_trace_error (MONO_TRACE_SECURITY, "mono_codeman_enable_write called on libnx platform. This is not supported");
+#endif
+
 #ifdef HAVE_PTHREAD_JIT_WRITE_PROTECT_NP
 	if (__builtin_available (macOS 11, *)) {
 		int level = GPOINTER_TO_INT (mono_native_tls_get_value (write_level_tls_id));
@@ -757,6 +895,11 @@ mono_codeman_disable_write (void)
 {
 	if (codeman_no_exec)
 		return;
+
+#if HOST_LIBNX
+	mono_trace_error (MONO_TRACE_SECURITY, "mono_codeman_disable_write called on libnx platform. This is not supported");
+#endif
+
 #ifdef HAVE_PTHREAD_JIT_WRITE_PROTECT_NP
 	if (__builtin_available (macOS 11, *)) {
 		int level = GPOINTER_TO_INT (mono_native_tls_get_value (write_level_tls_id));
@@ -769,4 +912,91 @@ mono_codeman_disable_write (void)
 #elif defined(HOST_MACCAT) && defined(__aarch64__)
 	/* JITing in Catalyst apps is not allowed on Apple Silicon, so assume if we're here we don't really have executable pages */
 #endif
+}
+
+#if HOST_LIBNX
+guint8* mono_codeman_find_write_address (void* exec_address, const char* trace_line)
+{
+	if (!trace_line) trace_line = "(unknown source)";
+	if (!exec_address) {
+		mono_trace_error(MONO_TRACE_TYPE, "mono_codeman_find_write_address: exec_address is NULL %s", trace_line);
+		return NULL;
+	}
+
+	ptrdiff_t offset = 0;
+	JitAreaNode* jit = nx_jit_find_area(exec_address, JIT_AREA_LOOKUP_BY_RX, &offset);
+	if (!jit) 
+	{
+		mono_trace_error(MONO_TRACE_TYPE, "mono_codeman_find_write_address: jit area not found for rx=%p %s", exec_address, trace_line);
+		return NULL;
+	}
+
+	return (guint8*)jit->nativeJit.rw_addr + offset;
+}
+
+guint8* mono_codeman_find_exec_address (void* write_address, const char* trace_line)
+{
+	if (!trace_line) trace_line = "(unknown source)";	
+	if (!write_address) {
+		mono_trace_error(MONO_TRACE_TYPE, "mono_codeman_find_exec_address: write_address is NULL %s", trace_line);
+		return NULL;
+	}
+
+	ptrdiff_t offset = 0;
+	JitAreaNode* jit = nx_jit_find_area(write_address, JIT_AREA_LOOKUP_BY_RW, &offset);
+	if (!jit)  
+	{
+		mono_trace_error(MONO_TRACE_TYPE, "mono_codeman_find_exec_address: jit area not found for rw=%p %s", write_address, trace_line);
+		return NULL;
+	}
+
+	return (guint8*)jit->nativeJit.rx_addr + offset;
+}
+#else
+guint8* mono_codeman_find_write_address (void* exec_address, const char* trace_line)
+{
+	return (guint8*)exec_address;
+}
+
+guint8* mono_codeman_find_exec_address (void* write_address, const char* trace_line)
+{
+	return (guint8*)write_address;
+}
+#endif
+
+guint8* mono_codeman_enable_write_ex (void* address, const char* trace_line)
+{
+	// Some AOT code paths seem to end up calling this function, in that case don't perform translation
+	// In the optimal case just return the address.
+	if (mono_aot_mode == MONO_AOT_MODE_FULL)
+		return (guint8*)address;
+
+	#if !HOST_LIBNX
+	mono_codeman_enable_write ();
+	#endif
+
+	guint8* res = mono_codeman_find_write_address (address, trace_line);
+	
+	// HACK: This is wrong here, if this address refers to an AOT image we should return it as-is
+	// To check we'd need a reference to the CodeManager* that allocated this address
+	g_assert (res != NULL);
+
+	return res;
+}
+
+guint8* mono_codeman_disable_write_ex (void* address, const char* trace_line)
+{	
+	if (mono_aot_mode == MONO_AOT_MODE_FULL)
+		return (guint8*)address;
+
+	#if !HOST_LIBNX
+	mono_codeman_disable_write ();
+	#else
+	nx_jit_flush_cache_by_address (address);
+	#endif
+
+	guint8* res = mono_codeman_find_exec_address (address, trace_line);
+	g_assert (res != NULL);
+
+	return res;
 }

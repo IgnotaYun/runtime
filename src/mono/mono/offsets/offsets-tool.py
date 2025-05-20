@@ -12,6 +12,7 @@ IOS_DEFINES = ["HOST_DARWIN", "TARGET_MACH", "MONO_CROSS_COMPILE", "USE_MONO_CTX
 ANDROID_DEFINES = ["HOST_ANDROID", "MONO_CROSS_COMPILE", "USE_MONO_CTX", "BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD"]
 LINUX_DEFINES = ["HOST_LINUX", "MONO_CROSS_COMPILE", "USE_MONO_CTX"]
 WASI_DEFINES = ["_WASI_EMULATED_PROCESS_CLOCKS", "_WASI_EMULATED_SIGNAL", "_WASI_EMULATED_MMAN"]
+LIBNX_DEFINES = ["HOST_LIBNX", "LIBNX_DEFINES", "MONO_CROSS_COMPILE", "USE_MONO_CTX"]
 
 class Target:
 	def __init__(self, arch, platform, others):
@@ -126,6 +127,15 @@ class OffsetsTool:
 				self.sys_includes += [args.emscripten_path + "/system/include", args.emscripten_path + "/system/include/libc", args.emscripten_path + "/system/lib/libc/musl/arch/emscripten", args.emscripten_path + "/system/lib/libc/musl/include", args.emscripten_path + "/system/lib/libc/musl/arch/generic"]
 				self.target = Target ("TARGET_WASM", None, [])
 				self.target_args += ["-target", args.abi]
+
+		elif args.abi == "aarch64-none-elf" and "libnx" in args.target_path:
+			require_sysroot(args)
+			self.target = Target ("TARGET_ARM64", "TARGET_LIBNX", LIBNX_DEFINES)
+			self.sys_includes = [ args.sysroot + "/devkitA64/lib/gcc/aarch64-none-elf/14.2.0/include", args.sysroot + "/devkitA64/lib/gcc/aarch64-none-elf/15.1.0/include"]
+			self.target_args += ["-target", "arm64"]
+			self.target_args += ["-isysroot", args.sysroot]
+			self.target_args += ["-isystem", args.sysroot + "/devkitA64/aarch64-none-elf/include/"]
+			self.target_args += ["-D__DEVKITA64__"]
 
 		# Linux
 		elif "arm-linux-gnueabihf" == args.abi:

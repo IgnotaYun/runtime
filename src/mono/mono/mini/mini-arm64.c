@@ -181,11 +181,12 @@ get_delegate_invoke_impl (gboolean has_target, gboolean param_count, guint32 *co
 {
 	guint8 *code, *start;
 
-	MINI_BEGIN_CODEGEN ();
-
 	if (has_target) {
 		int size = 16;
-		start = code = mono_global_codeman_reserve (size);
+		code = mono_global_codeman_reserve (size);
+		
+		MINI_BEGIN_CODEGEN_EX (code);
+		start = code;
 
 		/* Replace the this argument with the target */
 		arm_dmb (code, ARM_DMB_ISHLD);
@@ -198,7 +199,10 @@ get_delegate_invoke_impl (gboolean has_target, gboolean param_count, guint32 *co
 		int size, i;
 
 		size = 8 + param_count * 4;
-		start = code = mono_global_codeman_reserve (size);
+		code = mono_global_codeman_reserve (size);
+		
+		MINI_BEGIN_CODEGEN_EX (code);
+		start = code;
 
 		arm_ldrx (code, ARMREG_IP0, ARMREG_R0, MONO_STRUCT_OFFSET (MonoDelegate, method_ptr));
 		/* slide down the arguments */
@@ -208,10 +212,11 @@ get_delegate_invoke_impl (gboolean has_target, gboolean param_count, guint32 *co
 
 		g_assert ((code - start) <= size);
 	}
-	MINI_END_CODEGEN (start, GPTRDIFF_TO_INT (code - start), MONO_PROFILER_CODE_BUFFER_DELEGATE_INVOKE, NULL);
-
+	
 	if (code_size)
 		*code_size = GPTRDIFF_TO_UINT32 (code - start);
+
+	MINI_END_CODEGEN_EX(start, GPTRDIFF_TO_INT (code - start), MONO_PROFILER_CODE_BUFFER_DELEGATE_INVOKE, NULL);
 
 	return MINI_ADDR_TO_FTNPTR (start);
 }
@@ -229,10 +234,11 @@ get_delegate_virtual_invoke_impl (MonoTrampInfo **info, gboolean load_imt_reg, i
 	if (offset / (int)sizeof (target_mgreg_t) > MAX_VIRTUAL_DELEGATE_OFFSET)
 		return NULL;
 
-	MINI_BEGIN_CODEGEN ();
-
-	start = code = mono_global_codeman_reserve (size);
-
+	code = mono_global_codeman_reserve (size);
+	
+	MINI_BEGIN_CODEGEN_EX(code);
+	start = code;
+		
 	unwind_ops = mono_arch_get_cie_program ();
 
 	/* Replace the this argument with the target */
@@ -250,10 +256,11 @@ get_delegate_virtual_invoke_impl (MonoTrampInfo **info, gboolean load_imt_reg, i
 
 	g_assert ((code - start) <= size);
 
-	MINI_END_CODEGEN (start, GPTRDIFF_TO_INT (code - start), MONO_PROFILER_CODE_BUFFER_DELEGATE_INVOKE, NULL);
+	gint32 final_size = GPTRDIFF_TO_INT (code - start);
+	MINI_END_CODEGEN_EX(start, final_size, MONO_PROFILER_CODE_BUFFER_DELEGATE_INVOKE, NULL);
 
 	tramp_name = mono_get_delegate_virtual_invoke_impl_name (load_imt_reg, offset);
-	*info = mono_tramp_info_create (tramp_name, start, GPTRDIFF_TO_UINT32 (code - start), NULL, unwind_ops);
+	*info = mono_tramp_info_create (tramp_name, start, final_size, NULL, unwind_ops);
 	g_free (tramp_name);
 
 	return start;
@@ -382,6 +389,10 @@ mono_arch_init (void)
 #endif
 #ifdef MONO_ARCH_ENABLE_PTRAUTH
 	enable_ptrauth = TRUE;
+#endif
+#ifdef TARGET_LIBNX
+	mini_debug_options.soft_breakpoints = TRUE;
+	mini_debug_options.explicit_null_checks = TRUE;
 #endif
 
 	if (!mono_aot_only)
@@ -1292,6 +1303,8 @@ create_thunk (MonoCompile *cfg, guchar *code, const guchar *target, int relocati
 	guint8 *orig_target;
 	guint8 *target_thunk;
 	MonoJitMemoryManager* jit_mm;
+
+	// With the current codegen implementation on libnx, this function is broken because it mixes up rx and rw addresses....
 
 	if (cfg) {
 		/*
@@ -6759,16 +6772,16 @@ mono_arch_build_imt_trampoline (MonoVTable *vtable, MonoIMTCheckItem **imt_entri
 			buf_len += 6 * 4;
 		}
 	}
-
+	
 	if (fail_tramp) {
 		buf = (guint8 *)mini_alloc_generic_virtual_trampoline (vtable, buf_len);
 	} else {
 		MonoMemoryManager *mem_manager = m_class_get_mem_manager (vtable->klass);
 		buf = mono_mem_manager_code_reserve (mem_manager, buf_len);
 	}
-	code = buf;
 
-	MINI_BEGIN_CODEGEN ();
+	MINI_BEGIN_CODEGEN_EX (buf);
+	code = buf;
 
 	/*
 	 * We are called by JITted code, which passes in the IMT argument in
@@ -6839,7 +6852,7 @@ mono_arch_build_imt_trampoline (MonoVTable *vtable, MonoIMTCheckItem **imt_entri
 
 	g_assert ((code - buf) <= buf_len);
 
-	MINI_END_CODEGEN (buf, GPTRDIFF_TO_INT (code - buf), MONO_PROFILER_CODE_BUFFER_IMT_TRAMPOLINE, NULL);
+	MINI_END_CODEGEN_EX(buf, GPTRDIFF_TO_INT (code - buf), MONO_PROFILER_CODE_BUFFER_IMT_TRAMPOLINE, NULL);
 
 	return MINI_ADDR_TO_FTNPTR (buf);
 }

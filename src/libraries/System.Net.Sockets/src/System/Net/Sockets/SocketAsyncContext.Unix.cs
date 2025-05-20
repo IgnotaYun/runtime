@@ -784,6 +784,10 @@ namespace System.Net.Sockets
                                             // "losing" the notification and causing the operation to pend indefinitely.
             private AsyncOperation? _tail;   // Queue of pending IO operations to process when data becomes available.
 
+#if TARGET_LIBNX
+            internal bool IsEmpty => _tail == null;
+#endif
+
             // The _queueLock is used to ensure atomic access to the queue state above.
             // The lock is only ever held briefly, to read and/or update queue state, and
             // never around any external call, e.g. OS call or user code invocation.
@@ -1264,6 +1268,10 @@ namespace System.Net.Sockets
         private bool _isHandleNonBlocking = OperatingSystem.IsWasi(); // WASI sockets are always non-blocking, because we don't have another thread which could be blocked
         /// <summary>An index into <see cref="SocketAsyncEngine"/>'s table of all contexts that are currently <see cref="IsRegistered"/>.</summary>
         internal int GlobalContextIndex = -1;
+
+#if TARGET_LIBNX
+        internal bool HasPendingWrites => !_sendQueue.IsEmpty;
+#endif
 
         private readonly object _registerLock = new object();
 

@@ -33,6 +33,8 @@ elseif(HOST_FREEBSD)
   set(OS_LIBS pthread m)
 elseif(HOST_HAIKU)
   set(OS_LIBS network)
+elseif(HOST_LIBNX)
+  set(OS_LIBS pthread m)
 endif()
 
 #
@@ -227,7 +229,7 @@ set(posix_sources
 
 if(HOST_DARWIN)
 set(os_sources "${darwin_sources};${posix_sources}")
-elseif(HOST_LINUX OR HOST_SOLARIS OR HOST_FREEBSD OR HOST_HAIKU)
+elseif(HOST_LINUX OR HOST_SOLARIS OR HOST_FREEBSD OR HOST_HAIKU OR HOST_LIBNX)
 set(os_sources "${posix_sources}")
 elseif(HOST_WIN32)
 set(os_sources "${windows_sources}")

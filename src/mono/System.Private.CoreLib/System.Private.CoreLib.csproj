@@ -279,6 +279,9 @@
   <ItemGroup Condition="'$(TargetsWasi)' == 'true' or '$(TargetsAnyOS)' == 'true'">
     <SupportedPlatform Include="wasi"/>
   </ItemGroup>
+  <ItemGroup Condition="'$(TargetsLibnx)' == 'true' or '$(TargetsAnyOS)' == 'true'">
+    <SupportedPlatform Include="libnx"/>
+  </ItemGroup>
 
   <Import Project="$(LibrariesProjectRoot)\System.Private.CoreLib\src\System.Private.CoreLib.Shared.projitems" Label="Shared" />
 

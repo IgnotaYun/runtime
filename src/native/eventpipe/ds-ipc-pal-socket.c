@@ -28,7 +28,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#ifndef __SWITCH__
 #include <sys/un.h>
+#else
+#include <arpa/inet.h>
+#endif
 #include <sys/stat.h>
 
 #if __GNUC__

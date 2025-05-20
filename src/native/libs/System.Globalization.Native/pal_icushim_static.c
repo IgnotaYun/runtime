@@ -205,7 +205,7 @@ GlobalizationNative_LoadICUData(const char* path)
 
 int32_t GlobalizationNative_LoadICU(void)
 {
-#if !defined(LOCAL_BUILD)
+#if !defined(LOCAL_BUILD) && !defined(TARGET_LIBNX)
 // Static NativeAOT compilation does not have
 // GlobalizationNative_LoadICUData() as entrypoint
     if (!isDataSet)

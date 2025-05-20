@@ -45,5 +45,17 @@ void            mono_code_manager_foreach  (MonoCodeManager *cman, MonoCodeManag
 void mono_codeman_enable_write (void);
 void mono_codeman_disable_write (void);
 
+// On libnx, we can only allocate W^X memory so we need to manualy switch permissions every time we need to write new code
+// However, the same memory region is mapped at two different addresses, one for executing and one for writing.
+// Codeman clients do not have this assumption so for compatibility we provide a way to transparently switch between the two.
+// the _ex functions take the current address held by the client and return the address that should be used to write or execute to.
+// This is very hacky and could cause issues if the client is not careful (eg, copying the address before calling the function)
+// These functions work in conjunction with the new MINI_xyz_CODEGEN_EX macros
+guint8* mono_codeman_enable_write_ex (void* exec_address, const char* trace_line);
+guint8* mono_codeman_disable_write_ex (void* write_address, const char* trace_line);
+
+guint8* mono_codeman_find_write_address (void* exec_address, const char* trace_line);
+guint8* mono_codeman_find_exec_address (void* write_address, const char* trace_line);
+
 #endif /* __MONO_CODEMAN_H__ */
 

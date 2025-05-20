@@ -53,10 +53,11 @@
 #else
 #include <linux/if_packet.h>
 #endif
-#elif defined(AF_LINK)
+#elif defined(AF_LINK) && !defined(TARGET_LIBNX)
 #include <net/if_dl.h>
 #include <net/if_types.h>
-#elif defined(TARGET_WASI)
+#elif defined(TARGET_WASI) || defined(TARGET_LIBNX)
+#undef HAVE_RT_MSGHDR
 #else
 #error System must have AF_PACKET or AF_LINK.
 #endif

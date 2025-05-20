@@ -407,7 +407,7 @@
 
 #elif defined(TARGET_ARM64)
 
-#if defined(MONO_CROSS_COMPILE)
+#if defined(MONO_CROSS_COMPILE) || defined(HOST_LIBNX)
 	#define UCONTEXT_REG_PC(ctx) NULL
 	#define UCONTEXT_REG_SP(ctx) NULL
 	#define UCONTEXT_REG_R0(ctx) NULL

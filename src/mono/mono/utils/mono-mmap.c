@@ -49,7 +49,8 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-#if !defined(__APPLE__)  // returning virtual addresses <4G requires entitlement on Apple platforms, do not use it
+#if !defined(__APPLE__)  // returning virtual addresses <4G requires entitlement on Apple platforms, do not use it 
+
 #ifndef MAP_32BIT
 #define MAP_32BIT 0
 #endif
@@ -131,6 +132,10 @@ mono_mem_account_register_counters (void)
 
 #elif defined(HOST_WASM)
 // WebAssembly implementation in mono-mmap-wasm.c
+#define HAVE_VALLOC_ALIGNED
+
+#elif defined(HOST_LIBNX)
+// Switch specific implementation in mono-mmap-libnx.c
 #define HAVE_VALLOC_ALIGNED
 
 #else

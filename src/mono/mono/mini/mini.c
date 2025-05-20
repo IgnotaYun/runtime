@@ -2140,7 +2140,7 @@ mono_codegen (MonoCompile *cfg)
 		code = (guint8 *)mono_mem_manager_code_reserve (code_mem_manager, cfg->code_size + cfg->thunk_area + unwindlen);
 	}
 
-	mono_codeman_enable_write ();
+	code = mono_codeman_enable_write_ex (code, G_STRLOC);
 
 	if (cfg->thunk_area) {
 		cfg->thunks_offset = cfg->code_size + unwindlen;
@@ -2223,7 +2223,7 @@ mono_codegen (MonoCompile *cfg)
 		mono_mem_manager_code_commit (code_mem_manager, cfg->native_code, cfg->code_size, cfg->code_len);
 	}
 
-	mono_codeman_disable_write ();
+	cfg->native_code = mono_codeman_disable_write_ex (cfg->native_code, G_STRLOC);
 
 	MONO_PROFILER_RAISE (jit_code_buffer, (cfg->native_code, cfg->code_len, MONO_PROFILER_CODE_BUFFER_METHOD, cfg->method));
 

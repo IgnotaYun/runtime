@@ -8,6 +8,7 @@ unset(ILLUMOS)
 unset(ANDROID)
 unset(TIZEN)
 unset(HAIKU)
+unset(LIBNX)
 
 set(TARGET_ARCH_NAME $ENV{TARGET_BUILD_ARCH})
 
@@ -25,6 +26,11 @@ elseif(EXISTS ${CROSS_ROOTFS}/usr/platform/i86pc)
 elseif(EXISTS ${CROSS_ROOTFS}/boot/system/develop/headers/config/HaikuConfig.h)
   set(CMAKE_SYSTEM_NAME Haiku)
   set(HAIKU 1)
+elseif(EXISTS ${CROSS_ROOTFS}/libnx/include/switch.h AND TARGET_ARCH_NAME STREQUAL "arm64")
+  set(CMAKE_SYSTEM_NAME Libnx)
+  set(LIBNX 1)
+  set(DEVKITA64 "${CROSS_ROOTFS}/devkitA64")
+  set(PORTLIBS "${CROSS_ROOTFS}/portlibs/switch")
 else()
   set(CMAKE_SYSTEM_NAME Linux)
   set(LINUX 1)
@@ -53,6 +59,8 @@ elseif(TARGET_ARCH_NAME STREQUAL "arm64")
   set(CMAKE_SYSTEM_PROCESSOR aarch64)
   if(EXISTS ${CROSS_ROOTFS}/usr/lib/gcc/aarch64-alpine-linux-musl)
     set(TOOLCHAIN "aarch64-alpine-linux-musl")
+  elseif(LIBNX)
+    set(TOOLCHAIN "aarch64-none-elf")
   elseif(LINUX)
     set(TOOLCHAIN "aarch64-linux-gnu")
     if(TIZEN)
@@ -238,6 +246,38 @@ elseif(HAIKU)
 
     # let CMake set up the correct search paths
     include(Platform/Haiku)
+elseif(LIBNX)
+    set(CMAKE_INCLUDE_PATH "")
+    include_directories(SYSTEM ${DEVKITA64}/aarch64-none-elf/include)
+    include_directories(SYSTEM ${CROSS_ROOTFS}/libnx/include)
+    include_directories(SYSTEM ${CROSS_ROOTFS}/portlibs/switch/include/)
+
+    # https://github.com/vbe0201/switch-cmake/blob/rewrite/DevkitA64Libnx.cmake
+    list(APPEND CMAKE_PROGRAM_PATH "${CROSS_ROOTFS}/tools/bin")
+    list(APPEND CMAKE_PROGRAM_PATH "${DEVKITA64}/bin")
+
+    set(CMAKE_FIND_ROOT_PATH ${DEVKITPRO} ${CROSS_ROOTFS} ${PORTLIBS})
+    set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS FALSE)
+    add_definitions(-DSWITCH -D__SWITCH__)
+    add_compile_options(-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE)
+    add_compile_options(-g -Wall -O2 -ffunction-sections)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti -fno-exceptions")
+    # set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -g ${ARCH}" CACHE STRING "ASM flags")
+
+    set(CMAKE_SYSTEM_PREFIX_PATH "${CROSS_ROOTFS}/devkitA64/")
+
+    set(CMAKE_C_COMPILER "${DEVKITA64}/bin/aarch64-none-elf-gcc")
+    set(CMAKE_CXX_COMPILER "${DEVKITA64}/bin/aarch64-none-elf-g++")
+    set(CMAKE_AR "${DEVKITA64}/bin/aarch64-none-elf-gcc-ar")
+
+    message(STATUS "CMAKE_C_COMPILER: ${CMAKE_C_COMPILER}")
+    message(STATUS "CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
+
+    # These flags are purposefully empty to use the default flags when invoking the
+    # devkitA64 linker. Otherwise the linker may complain about duplicate flags.
+    set(CMAKE_EXE_LINKER_FLAGS "" CACHE STRING "Executable linker flags")
+    set(CMAKE_STATIC_LINKER_FLAGS "" CACHE STRING "Library linker flags")
+    set(CMAKE_MODULE_LINKER_FLAGS "" CACHE STRING "Module linker flags")
 else()
     set(CMAKE_SYSROOT "${CROSS_ROOTFS}")
 
@@ -305,7 +345,7 @@ endif()
 
 # Specify compile options
 
-if((TARGET_ARCH_NAME MATCHES "^(arm|arm64|armel|armv6|loongarch64|ppc64le|riscv64|s390x|x64|x86)$" AND NOT ANDROID AND NOT FREEBSD AND NOT OPENBSD) OR ILLUMOS OR HAIKU)
+if((TARGET_ARCH_NAME MATCHES "^(arm|arm64|armel|armv6|loongarch64|ppc64le|riscv64|s390x|x64|x86)$" AND NOT ANDROID AND NOT FREEBSD AND NOT OPENBSD) OR ILLUMOS OR HAIKU OR LIBNX)
   set(CMAKE_C_COMPILER_TARGET ${TOOLCHAIN})
   set(CMAKE_CXX_COMPILER_TARGET ${TOOLCHAIN})
   set(CMAKE_ASM_COMPILER_TARGET ${TOOLCHAIN})

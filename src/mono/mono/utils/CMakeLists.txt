@@ -32,6 +32,8 @@ if(HOST_WIN32)
     set(utils_platform_sources ${utils_win32_sources})
 elseif(HOST_WASM)
     set(utils_platform_sources ${utils_unix_sources} mono-threads-wasm.S)
+elseif(HOST_LIBNX)
+    set(utils_platform_sources ${utils_unix_sources} mono-codeman-libnx.c)
 else()
     set(utils_platform_sources ${utils_unix_sources})
 endif()
@@ -52,6 +54,7 @@ set(utils_common_sources
     mono-dl.h
     mono-dl-windows-internals.h
     mono-log-windows.c
+    mono-log-libnx.c
     mono-log-common.c
     mono-log-posix.c
     mono-log-android.c
@@ -64,6 +67,7 @@ set(utils_common_sources
     mono-math-c.c
     mono-mmap.c
     mono-mmap-windows.c
+    mono-mmap-libnx.c
     mono-mmap.h
     mono-mmap-internals.h
     mono-os-mutex.h
@@ -122,6 +126,7 @@ set(utils_common_sources
     mono-threads-mach-helper.c
     mono-threads-windows.c
     mono-threads-linux.c
+    mono-threads-libnx.c
     mono-threads-freebsd.c
     mono-threads-netbsd.c
     mono-threads-openbsd.c

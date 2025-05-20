@@ -386,6 +386,11 @@ gboolean mono_method_same_domain (MonoJitInfo *caller, MonoJitInfo *callee)
 	return TRUE;
 }
 
+MonoCodeManager* mono_global_codeman_get(void)
+{
+	return global_codeman;
+}
+
 /*
  * mono_global_codeman_reserve:
  *
@@ -1508,7 +1513,8 @@ mono_resolve_patch_target_ext (MonoMemoryManager *mem_manager, MonoMethod *metho
 		int i;
 
 		if (method && method->dynamic) {
-			jump_table = (void **)mono_code_manager_reserve (mono_dynamic_code_hash_lookup (method)->code_mp, sizeof (gpointer) * patch_info->data.table->table_size);
+			MonoCodeManager* codeman = mono_dynamic_code_hash_lookup (method)->code_mp;
+			jump_table = (void **)mono_code_manager_reserve (codeman, sizeof (gpointer) * patch_info->data.table->table_size);
 		} else {
 			MonoMemoryManager *method_mem_manager = method ? m_method_get_mem_manager (method) : mem_manager;
 			if (mono_aot_only) {
@@ -1518,11 +1524,11 @@ mono_resolve_patch_target_ext (MonoMemoryManager *mem_manager, MonoMethod *metho
 			}
 		}
 
-		mono_codeman_enable_write ();
+		jump_table = (gpointer*)mono_codeman_enable_write_ex (jump_table, G_STRLOC);
 		for (i = 0; i < patch_info->data.table->table_size; i++) {
 			jump_table [i] = code + GPOINTER_TO_INT (patch_info->data.table->table [i]);
 		}
-		mono_codeman_disable_write ();
+		jump_table = (gpointer*)mono_codeman_disable_write_ex (jump_table, G_STRLOC);
 
 		target = jump_table;
 #else

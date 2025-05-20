@@ -20,6 +20,8 @@
 #include <lwp.h>
 #elif defined(__HAIKU__)
 #include <kernel/OS.h>
+#elif defined(TARGET_LIBNX)
+#include <switch.h>
 #endif
 
 #ifdef PTHREAD_MAX_NAMELEN_NP
@@ -64,6 +66,8 @@ static inline size_t minipal_get_current_thread_id_no_cache(void)
     tid = (size_t)find_thread(NULL);
 #elif defined(__sun)
     tid = (size_t)pthread_self();
+#elif defined(TARGET_LIBNX)
+    tid = (size_t)threadGetCurHandle();
 #elif defined(__wasm)
     tid = (size_t)(void*)pthread_self();
 #else
