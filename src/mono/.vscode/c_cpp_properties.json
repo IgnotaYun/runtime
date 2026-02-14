@@ -60,7 +60,7 @@
                 "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/include",
                 "${workspaceRoot}",
                 "${workspaceRoot}/mono",
-                "${workspaceRoot}/mono/eglib",
+                "${workspaceRoot}/mono/eglib"
             ],
             "defines": [
                 "_DEBUG",
@@ -71,6 +71,39 @@
                 "path": [
                     "${default}",
                     "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/include/*",
+                    "${workspaceRoot}",
+                    "${workspaceRoot}/mono",
+                    "${workspaceRoot}/mono/eglib"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": ""
+            }
+        },
+        {
+            "compilerPath": "/opt/devkitpro/devkitA64/bin/aarch64-none-elf-gcc",
+            "name": "LIBNX",
+            "includePath": [
+                "${default}",
+                "/usr/include",
+                "/usr/local/include",
+                "${workspaceFolder}",
+                "${workspaceFolder}/mono",
+                "${workspaceFolder}/mono/eglib",
+                "${workspaceFolder}/../native/public/",
+                "${workspaceFolder}/../../artifacts/obj/mono/libnx.arm64.Debug/",
+                "/opt/devkitpro/libnx/include"
+            ],
+            "defines": [
+                "HOST_LIBNX=1",
+                "LIBNX=1",
+                "__SWITCH__=1"
+            ],
+            "intelliSenseMode": "linux-gcc-arm64",
+            "browse": {
+                "path": [
+                    "${default}",
+                    "/usr/include",
+                    "/usr/local/include",
                     "${workspaceRoot}",
                     "${workspaceRoot}/mono",
                     "${workspaceRoot}/mono/eglib"
