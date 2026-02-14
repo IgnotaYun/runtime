@@ -102,6 +102,12 @@ g_path_is_absolute (const char *filename)
 {
 	g_return_val_if_fail (filename != NULL, FALSE);
 
+#if HOST_LIBNX
+	// Support newlib-style device paths which starts with device:/
+	if (strstr(filename, ":/") != NULL)
+		return TRUE;
+#endif
+
 	return (*filename == '/');
 }
 

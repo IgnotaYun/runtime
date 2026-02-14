@@ -299,6 +299,8 @@ elseif(CLR_CMAKE_HOST_OS STREQUAL "haiku")
 elseif(CLR_CMAKE_HOST_OS STREQUAL "libnx")
   set(HOST_LINUX 1)
   set(HOST_LIBNX 1)
+  # Symlink handling code does not account for newlib-style paths so disable it. Symlinks won't work on the sd card anyway.
+  set(HOST_NO_SYMLINKS 1)
   add_definitions(-DHOST_LIBNX)
   
   set(DISABLE_SHARED_LIBS 1)
