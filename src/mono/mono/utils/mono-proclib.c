@@ -80,6 +80,10 @@ mono_cpu_count (void)
 	SYSTEM_INFO info;
 	GetSystemInfo (&info);
 	return info.dwNumberOfProcessors;
+#elif defined(HOST_LIBNX)
+	// On HOS only 3 cores are available to applications.
+	// Core 3 is deidcated to sysmodules and if we use it we risk freezing the system
+	return 3;
 #else
 #ifdef HOST_ANDROID
 	/* Android tries really hard to save power by powering off CPUs on SMP phones which
