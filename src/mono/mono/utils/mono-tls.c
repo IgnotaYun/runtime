@@ -195,3 +195,146 @@ G_EXTERN_C MonoLMF **mono_tls_get_lmf_addr_extern (void)
 {
 	return mono_tls_get_lmf_addr ();
 }
+
+#if HOST_LIBNX
+
+#include <switch.h>
+#include "mono-logger-internals.h"
+
+// libnx has a limit of 12 TLS slot, mono needs more.
+// Here we "multiplex" a single TLS slot to workaround this limitation
+
+#define TLS_EMU_MAX_KEYS 32
+#define KEY(i) (1ULL << (i))
+
+typedef void (*TlsDestructor)(void*);
+
+static Mutex g_tls_mutex = INVALID_HANDLE;
+static s32 g_fake_tls_key = -1;
+static u64 g_my_key_bitmap;
+static TlsDestructor g_destructors[TLS_EMU_MAX_KEYS];
+
+typedef struct
+{
+	u64 bitmap;
+	void* items[TLS_EMU_MAX_KEYS];
+	bool being_destroyed;
+} emulated_tls_data;
+
+static void tls_thread_destructor(void* data)
+{
+	if (!data)
+		return;
+	
+	mono_trace_message (MONO_TRACE_DIAGNOSTICS, "Running fake TLS destructor for %p\n", data);
+
+	emulated_tls_data* tls = (emulated_tls_data*)data;
+	for (int i = 0; i < TLS_EMU_MAX_KEYS; i++)
+	{
+		// If this key is not valid, or has been freed, skip it
+		// The call to a destructor may free other keys so we need to check this every time
+		if (!(g_my_key_bitmap & KEY(i)))
+			continue;
+
+		// If this thread does not use this key, skip it
+		if (!(tls->bitmap & KEY(i)))
+
+		if (g_destructors[i])
+		{
+			void* value = tls->items[i];
+			tls->items[i] = NULL;
+			tls->bitmap &= ~KEY(i);
+			g_destructors[i](value);
+
+			if (tls->bitmap & KEY(i))
+				g_error("TLS destructor for key %d re-set the value, which is not supported", i);
+		}
+	}
+}	
+
+static emulated_tls_data* fake_tls_get(void)
+{
+	emulated_tls_data* ptr = threadTlsGet(g_fake_tls_key);	
+	if (ptr)
+		return ptr;
+
+	ptr = calloc(1, sizeof(emulated_tls_data));
+	g_assert(ptr);
+
+	threadTlsSet(g_fake_tls_key, ptr);
+
+	mono_trace_message (MONO_TRACE_DIAGNOSTICS, "Allocated fake TLS for %p\n", ptr);
+	return ptr;
+}
+
+int mono_native_tls_alloc (MonoNativeTlsKey *key, void *destructor)
+{
+	mutexLock(&g_tls_mutex);
+
+	if (g_fake_tls_key == -1) 
+	{
+		g_fake_tls_key = threadTlsAlloc(tls_thread_destructor);
+		if (g_fake_tls_key == -1)
+			g_error("Failed to initialize fake_tls");
+	}
+
+	u64 bitmap = g_my_key_bitmap;
+	
+	int index = __builtin_ffs(~bitmap) - 1;
+	if (index < 0 || index >= TLS_EMU_MAX_KEYS) 
+		g_error("Out of TLS slots");
+
+    g_my_key_bitmap = bitmap | KEY(index);
+	g_destructors[index] = (TlsDestructor)destructor;
+	
+	*key = index;
+
+	mutexUnlock(&g_tls_mutex);
+
+	return 1;
+}
+
+void mono_native_tls_free (MonoNativeTlsKey key)
+{	
+	mutexLock(&g_tls_mutex);
+	if (key < 0 || key >= TLS_EMU_MAX_KEYS)
+		g_error("mono_native_tls_free called with Invalid TLS key");
+
+	u64 bitmap = g_my_key_bitmap;
+	if (!(bitmap & KEY(key)))
+		g_error("mono_native_tls_free called with free TLS key");
+        
+    g_my_key_bitmap = bitmap & ~KEY(key);	
+	g_destructors[key] = NULL;
+
+	mutexUnlock(&g_tls_mutex);
+}
+
+static void ensure_key_valid(MonoNativeTlsKey key)
+{
+	if (key < 0 || key >= TLS_EMU_MAX_KEYS)
+		g_error("Invalid TLS key");
+
+	if (!(g_my_key_bitmap & KEY(key)))
+		g_error("TLS key already freed");
+}
+
+int mono_native_tls_set_value (MonoNativeTlsKey key, gpointer value)
+{
+	ensure_key_valid(key);
+
+	emulated_tls_data* data = fake_tls_get();
+	data->items[key] = value;
+	data->bitmap |= KEY(key);
+	return 1;
+}
+
+void* mono_native_tls_get_value (MonoNativeTlsKey key)
+{
+	ensure_key_valid(key);
+
+	emulated_tls_data* data = fake_tls_get();
+	return data->items[key];
+}
+
+#endif

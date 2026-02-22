@@ -96,17 +96,36 @@ mono_native_tls_get_value (unsigned index)
 	return p ? p [index - TLS_MINIMUM_AVAILABLE] : NULL;
 }
 
-#else
+#elif HOST_LIBNX
 
+#define MonoNativeTlsKey int32_t
+
+int mono_native_tls_alloc (MonoNativeTlsKey *key, void *destructor);
+
+void mono_native_tls_free (MonoNativeTlsKey key);
+
+int mono_native_tls_set_value (MonoNativeTlsKey key, gpointer value);
+
+void* mono_native_tls_get_value (MonoNativeTlsKey key_index);
+
+#else
 #include <pthread.h>
 
 #define MonoNativeTlsKey pthread_key_t
-#define mono_native_tls_get_value pthread_getspecific
 
 MONO_INLINE int
 mono_native_tls_alloc (MonoNativeTlsKey *key, void *destructor)
 {
-	return pthread_key_create (key, (void (*)(void*)) destructor) == 0;
+	int result = pthread_key_create (key, (void (*)(void*)) destructor);
+	if (result != 0) {
+		printf("Failed to allocate TLS key with error %d\n", result);
+		g_error("Failed to allocate TLS key");
+	}
+	else 
+	{
+		printf("Allocated TLS key %d\n", *key);
+	}
+	return result == 0;
 }
 
 MONO_INLINE void
@@ -117,8 +136,17 @@ mono_native_tls_free (MonoNativeTlsKey key)
 
 MONO_INLINE int
 mono_native_tls_set_value (MonoNativeTlsKey key, gpointer value)
-{
+{	
+	//printf ("Setting TLS key %d to %p\n", key, value);
 	return !pthread_setspecific (key, value);
+}
+
+MONO_INLINE const void*
+mono_native_tls_get_value(MonoNativeTlsKey key_index)
+{
+	const void* key = pthread_getspecific(key_index);
+	//printf ("Getting TLS key %d = %p\n", key_index, key);
+	return key;
 }
 
 #endif /* HOST_WIN32 */
