@@ -1008,7 +1008,7 @@ g_async_safe_fgets (char *str, int num, int handle, gboolean *newline)
 			*newline = TRUE;
 		}
 
-		if (!isprint (str [i]))
+		if (!isprint ((unsigned char)str [i]))
 			str [i] = '\0';
 
 		if (str [i] == '\0')

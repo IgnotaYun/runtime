@@ -70,10 +70,15 @@ int32_t SystemNative_GetSid(int32_t pid)
 
 void SystemNative_SysLog(SysLogPriority priority, const char* message, const char* arg1)
 {
-    if (message)
-        svcOutputDebugString(message, strlen(message));
-    if (arg1)
-        svcOutputDebugString(arg1, strlen(arg1));
+    if (message && strcmp(message, "%s") != 0) {
+        printf("%s", message);
+        //svcOutputDebugString(message, strlen(message));
+    }
+    if (arg1) {
+        printf("%s", arg1);
+        //svcOutputDebugString(arg1, strlen(arg1));
+    }
+    printf("\n");
 }
 
 int32_t SystemNative_WaitIdAnyExitedNoHangNoWait(void)
