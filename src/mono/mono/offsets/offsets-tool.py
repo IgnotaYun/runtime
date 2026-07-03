@@ -8,6 +8,8 @@ sys.dont_write_bytecode = True
 import argparse
 import clang.cindex
 
+from glob import glob
+
 IOS_DEFINES = ["HOST_DARWIN", "TARGET_MACH", "MONO_CROSS_COMPILE", "USE_MONO_CTX", "_XOPEN_SOURCE"]
 ANDROID_DEFINES = ["HOST_ANDROID", "MONO_CROSS_COMPILE", "USE_MONO_CTX", "BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD"]
 LINUX_DEFINES = ["HOST_LINUX", "MONO_CROSS_COMPILE", "USE_MONO_CTX"]
@@ -131,7 +133,7 @@ class OffsetsTool:
 		elif args.abi == "aarch64-none-elf" and "libnx" in args.target_path:
 			require_sysroot(args)
 			self.target = Target ("TARGET_ARM64", "TARGET_LIBNX", LIBNX_DEFINES)
-			self.sys_includes = [ args.sysroot + "/devkitA64/lib/gcc/aarch64-none-elf/14.2.0/include", args.sysroot + "/devkitA64/lib/gcc/aarch64-none-elf/15.1.0/include"]
+			self.sys_includes = glob(args.sysroot + "/devkitA64/lib/gcc/aarch64-none-elf/*/include")
 			self.target_args += ["-target", "arm64"]
 			self.target_args += ["-isysroot", args.sysroot]
 			self.target_args += ["-isystem", args.sysroot + "/devkitA64/aarch64-none-elf/include/"]
