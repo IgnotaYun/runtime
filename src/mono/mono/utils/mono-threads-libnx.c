@@ -13,10 +13,7 @@ mono_threads_platform_get_stack_bounds (guint8 **staddr, size_t *stsize)
 	*stsize = (size_t)-1;
 
 	Thread *thread = threadGetSelf();
-	if (!thread) {
-		printf("Error: threadGetSelf() failed\n");
-		return;
-	}
+	g_assert(thread);
 
 	*staddr = (guint8 *)thread->stack_mirror;
 	if (!*staddr)

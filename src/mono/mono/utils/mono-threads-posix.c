@@ -290,8 +290,14 @@ mono_memory_barrier_process_wide (void)
 	g_assert (status == 0);
 
 	if (memory_barrier_process_wide_helper_page == NULL) {
+#if defined(HOST_LIBNX)
+		extern void* __libnx_aligned_alloc(size_t alignment, size_t size);
+		memory_barrier_process_wide_helper_page = __libnx_aligned_alloc (mono_pagesize (), mono_pagesize ());
+		g_assert (memory_barrier_process_wide_helper_page);
+#else
 		memory_barrier_process_wide_helper_page = mono_valloc (NULL, mono_pagesize (), MONO_MMAP_NONE, MONO_MEM_ACCOUNT_OTHER);
 		g_assert (memory_barrier_process_wide_helper_page != NULL);
+#endif
 	}
 
 	// Changing a helper memory page protection from read / write to no access
