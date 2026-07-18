@@ -152,16 +152,16 @@ void nx_jit_flush_cache_by_address(void* address)
 
 // This function might be called from the embedder when closing the runtime.
 // This can also happen after mono_jit_cleanup, so we need to be careful not to call any mono functions here.
-void nx_jit_force_dispose(void) 
+void mono_nx_jit_force_dispose(void) 
 {
-	nxlogf("nx_jit_force_dispose enter");
+	nxlogf("mono_nx_jit_force_dispose enter");
 
 	while (g_jit_list)
 	{
-		nxlogf("nx_jit_force_dispose loop");
+		nxlogf("mono_nx_jit_force_dispose loop");
 		JitAreaNode* node = g_jit_list;
 		nx_jit_free_internal(node, false);
 	}
 
-	nxlogf("nx_jit_force_dispose finished");
+	nxlogf("mono_nx_jit_force_dispose finished");
 }
