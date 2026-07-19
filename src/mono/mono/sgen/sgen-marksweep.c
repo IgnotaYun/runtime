@@ -2822,7 +2822,12 @@ sgen_marksweep_init_internal (SgenMajorCollector *collector, gboolean is_concurr
 	g_assert (is_parallel == FALSE);
 #endif
 
+#if defined(HOST_LIBNX)
+	// This seems to fix a number of asserts and crashes during GC
+	ms_block_size = mono_valloc_granule ();
+#else
 	ms_block_size = mono_pagesize ();
+#endif
 
 	if (ms_block_size < MS_BLOCK_SIZE_MIN)
 		ms_block_size = MS_BLOCK_SIZE_MIN;

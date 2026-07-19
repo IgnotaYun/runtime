@@ -17,6 +17,7 @@
 #include <mono/utils/mono-logger-internals.h>
 
 // Custom mmap-like impl, similar to mono-wasm-pagemgr.c but uses a single pre-allocated buffer
+// We can't use mwpm because there is no sbrk() and it uses 32-bit addresses.
 #define MMAP_PAGE_SIZE (64 * 1024)
 
 // These symbols are exported to be called by the host application. Currently the heap memory is stolen from the newlib allocator.
@@ -79,13 +80,17 @@ static inline int is_page_free(int page_index) {
 	return (page_table[page_index / 8] & (1 << (page_index % 8))) == 0;
 }
 
+static inline int is_page_allocated(int page_index) {
+	return !is_page_free(page_index);
+}
+
 static inline void set_page_state(int page_index, int used)
 {
 	if (used) {
 		g_assert(is_page_free(page_index));
 		page_table[page_index / 8] |= (1 << (page_index % 8));
 	} else {
-		g_assert(!is_page_free(page_index));
+		// In mmap freeing the same page twice is allowed
 		page_table[page_index / 8] &= ~(1 << (page_index % 8));
 	}
 }
@@ -103,7 +108,6 @@ static inline void set_page_group_state(int start_page_index, int num_pages, int
 			g_assert(page_table[start_page_index / 8] == 0x00);
 			page_table[start_page_index / 8] = 0xFF;
 		} else {
-			g_assert(page_table[start_page_index / 8] == 0xff);
 			page_table[start_page_index / 8] = 0x00;
 		}
 
@@ -118,7 +122,7 @@ static inline void set_page_group_state(int start_page_index, int num_pages, int
 	}
 }
 
-static inline int find_first_page_of(int start_page, int max_page, int state)
+static inline int find_first_page_of(int start_page, int max_page, int state_allocated)
 {
 	if (start_page >= total_pages) return -1;
 	if (max_page > total_pages) max_page = total_pages;
@@ -126,9 +130,9 @@ static inline int find_first_page_of(int start_page, int max_page, int state)
 	while (start_page < max_page) {
 		int page_free = is_page_free(start_page);
 
-		if (state && !page_free) {
+		if (state_allocated && !page_free) {
 			return start_page;
-		} else if (!state && page_free) {
+		} else if (!state_allocated && page_free) {
 			return start_page;
 		}
 		
@@ -145,11 +149,11 @@ static inline int count_consecutive_pages(int start_page_index, int max_pages, i
 	if (start_page_index >= total_pages) return count;
 	if (start_page_index + max_pages > total_pages) max_pages = total_pages - start_page_index;
 
-	int initial_state = is_page_free(start_page_index) ? 0 : 1;
-	if (state) *state = initial_state;
+	int initial_is_allocated = is_page_allocated(start_page_index);
+	if (state) *state = initial_is_allocated;
 
 	while (start_page_index % 8 != 0 && max_pages > 0) {
-		if (is_page_free(start_page_index) != (initial_state == 0)) 
+		if (is_page_allocated(start_page_index) != initial_is_allocated) 
 			return count;
 
 		count++;
@@ -159,7 +163,7 @@ static inline int count_consecutive_pages(int start_page_index, int max_pages, i
 
 	while (max_pages >= 8) {
 		u8 byte = page_table[start_page_index / 8];
-		if (byte != (initial_state ? 0xFF : 0x00)) {
+		if (byte != (initial_is_allocated ? 0xFF : 0x00)) {
 			// Do not return here, we must count how many bits in this byte match the initial state
 			break;
 		}
@@ -170,7 +174,7 @@ static inline int count_consecutive_pages(int start_page_index, int max_pages, i
 	}
 
 	while (max_pages > 0) {
-		if (is_page_free(start_page_index) != (initial_state == 0)) 
+		if (is_page_allocated(start_page_index) != initial_is_allocated) 
 			return count;
 
 		count++;
@@ -296,7 +300,7 @@ mono_valloc_aligned (size_t size, size_t alignment, int flags, MonoMemAccountTyp
 	if (!ptr) return NULL;
 
 	// Check the pointer is actually aligned
-	if (((uintptr_t)ptr % alignment) != 0)
+	if (((uintptr_t)ptr & (alignment- 1)) != 0)
 		g_error ("mono_valloc_aligned: returned pointer %p is not aligned to %zx", ptr, alignment);
 
 	memset (ptr, 0, size);
