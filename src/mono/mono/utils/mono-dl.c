@@ -165,6 +165,14 @@ mono_dl_open_full (const char *name, int mono_flags, int native_flags, MonoError
 			}
 		}
 	}
+
+#if defined(HOST_LIBNX)
+	if (!lib) {
+		mono_error_set_error (error, MONO_ERROR_FILE_NOT_FOUND, "Failed to load library %s", name);
+		g_free (module);
+		return NULL;
+	}
+#else
 	if (!lib && !dl_fallback) {
 		/* This platform does not support dlopen */
 		if (name == NULL) {
@@ -179,6 +187,8 @@ mono_dl_open_full (const char *name, int mono_flags, int native_flags, MonoError
 		g_free (module);
 		return NULL;
 	}
+#endif
+
 	mono_refcount_init (module, NULL);
 	module->handle = lib;
 	module->dl_fallback = dl_fallback;

@@ -428,7 +428,7 @@ static MonoDl* native_handle_lookup_wrapper (gpointer handle)
 	if (!internal_module)
 		netcore_lookup_self_native_handle ();
 
-	if (internal_module->handle == handle) {
+	if (internal_module && internal_module->handle == handle) {
 		result = internal_module;
 	} else {
 		native_library_lock ();
