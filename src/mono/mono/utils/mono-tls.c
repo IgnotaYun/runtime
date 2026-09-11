@@ -238,6 +238,7 @@ static void tls_thread_destructor(void* data)
 
 		// If this thread does not use this key, skip it
 		if (!(tls->bitmap & KEY(i)))
+			continue;
 
 		if (g_destructors[i])
 		{
@@ -245,6 +246,8 @@ static void tls_thread_destructor(void* data)
 			tls->items[i] = NULL;
 			tls->bitmap &= ~KEY(i);
 			g_destructors[i](value);
+
+			mono_trace_message (MONO_TRACE_DIAGNOSTICS, "Ran g_destructors[%d] for value %p\n", i, value);
 
 			if (tls->bitmap & KEY(i))
 				g_error("TLS destructor for key %d re-set the value, which is not supported", i);
