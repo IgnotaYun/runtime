@@ -862,7 +862,7 @@ void emitter::emitIns_R_C(
         id->idCodeSize(8);
     }
     else
-        id->idCodeSize(16);
+        id->idCodeSize(24);
 
     if (EA_IS_GCREF(attr))
     {
@@ -962,11 +962,11 @@ void emitter::emitIns_R_L(instruction ins, emitAttr attr, BasicBlock* dst, regNu
     //   auipc reg, offset-hi20
     //   addi  reg, reg, offset-lo12
     //
-    // else:  3-ins:
-    //   lui  tmp, dst-hi-20bits
+    // else:  5-ins:
+    //   lui  tmp, dst-lo-20bits
     //   addi tmp, tmp, dst-lo-12bits
-    //   lui  reg, 0xff << 12
-    //   slli reg, reg, 32
+    //   lui reg, dst-hi-15bits
+    //   slli reg, reg, 20
     //   add  reg, tmp, reg
 
     instrDesc* id = emitNewInstr(attr);
@@ -1468,7 +1468,7 @@ unsigned emitter::emitOutputCall(insGroup* ig, BYTE* dst, instrDesc* id, code_t 
         // jalr t2
 
         ssize_t imm = (ssize_t)(id->idAddr()->iiaAddr);
-        assert((imm >> 32) <= 0xff);
+        assert((uint64_t)(imm >> 32) <= 0x7fff);
 
         int reg2 = (int)(imm & 1);
         imm -= reg2;
@@ -2294,11 +2294,11 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                 code = emitInsCode(INS_lui);
                 if (ins == INS_jal)
                 {
-                    assert((imm >> 40) == 0);
+                    assert((uint64_t)(imm >> 32) <= 0x7fff);
 
                     doff = imm & 0x7ff;
 
-                    UINT32 high = imm >> 11;
+                    UINT32 high = (UINT32)(imm >> 16);
 
                     code |= (code_t)codeGen->rsGetRsvdReg() << 7;
                     code |= (code_t)(((high + 0x800) >> 12) << 12);
@@ -2309,6 +2309,20 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                     code |= (code_t)codeGen->rsGetRsvdReg() << 7;
                     code |= (code_t)codeGen->rsGetRsvdReg() << 15;
                     code |= (code_t)(high & 0xFFF) << 20;
+                    *(code_t*)dstRW = code;
+                    dstRW += 4;
+
+                    code = emitInsCode(INS_slli);
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 7;
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 15;
+                    code |= (code_t)5 << 20;
+                    *(code_t*)dstRW = code;
+                    dstRW += 4;
+
+                    code = emitInsCode(INS_addi);
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 7;
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 15;
+                    code |= (code_t)((imm >> 11) & 0x1F) << 20;
                     *(code_t*)dstRW = code;
                     dstRW += 4;
 
@@ -2329,10 +2343,10 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                 }
                 else
                 {
-                    assert((imm >> 40) == 0);
+                    assert((uint64_t)(imm >> 32) <= 0x7fff);
 
                     doff        = imm & 0x7ff;
-                    UINT32 high = imm >> 11;
+                    UINT32 high = (UINT32)(imm >> 16);
 
                     code |= (code_t)(codeGen->rsGetRsvdReg() << 7);
                     code |= (code_t)(((high + 0x800) >> 12) << 12);
@@ -2343,6 +2357,20 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                     code |= (code_t)codeGen->rsGetRsvdReg() << 7;
                     code |= (code_t)codeGen->rsGetRsvdReg() << 15;
                     code |= (code_t)(high & 0xFFF) << 20;
+                    *(code_t*)dstRW = code;
+                    dstRW += 4;
+
+                    code = emitInsCode(INS_slli);
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 7;
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 15;
+                    code |= (code_t)5 << 20;
+                    *(code_t*)dstRW = code;
+                    dstRW += 4;
+
+                    code = emitInsCode(INS_addi);
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 7;
+                    code |= (code_t)codeGen->rsGetRsvdReg() << 15;
+                    code |= (code_t)((imm >> 11) & 0x1F) << 20;
                     *(code_t*)dstRW = code;
                     dstRW += 4;
 
@@ -2398,7 +2426,7 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             else
             {
                 ssize_t imm = (ssize_t)tgtIG->igOffs + (ssize_t)emitCodeBlock;
-                assert((imm >> (32 + 20)) == 0);
+                assert((uint64_t)(imm >> 32) <= 0x7fff); // RISC-V Linux Kernel SV48
 
                 code = emitInsCode(INS_lui);
                 code |= (code_t)codeGen->rsGetRsvdReg() << 7;
@@ -2414,16 +2442,16 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                 *(code_t*)dstRW = code;
                 dstRW += 4;
 
-                code = emitInsCode(INS_addi);
+                code = emitInsCode(INS_lui);
                 code |= (code_t)reg1 << 7;
-                code |= (((imm + 0x80000800) >> 32) & 0xfff) << 20;
+                code |= ((code_t)((imm >> 32) & 0xffff)) << 12;
                 *(code_t*)dstRW = code;
                 dstRW += 4;
 
                 code = emitInsCode(INS_slli);
                 code |= (code_t)reg1 << 7;
                 code |= (code_t)reg1 << 15;
-                code |= (code_t)32 << 20;
+                code |= (code_t)20 << 20;
                 *(code_t*)dstRW = code;
                 dstRW += 4;
 
