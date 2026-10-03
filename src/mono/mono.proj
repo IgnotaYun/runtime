@@ -835,8 +835,11 @@ JS_ENGINES = [NODE_JS]
       <MonoUseCrossTool>true</MonoUseCrossTool>
       <MonoAotAbi>aarch64-none-elf</MonoAotAbi>
       <MonoAotOffsetsFile>$(MonoObjCrossDir)offsets-aarch64-none-elf.h</MonoAotOffsetsFile>
-      <MonoAotOffsetsPrefix>$(MonoCrossDir)/devkitA64/bin/aarch64-none-elf</MonoAotOffsetsPrefix>
-      <MonoAotCMakeSysroot>$(MonoCrossDir)</MonoAotCMakeSysroot>
+      <!-- The AOT cross-compiler step runs with an empty ROOTFS_DIR (host toolchain); fall back to DEVKITPRO -->
+      <_MonoLibnxDevkitPro Condition="'$(MonoCrossDir)' != ''">$(MonoCrossDir)</_MonoLibnxDevkitPro>
+      <_MonoLibnxDevkitPro Condition="'$(_MonoLibnxDevkitPro)' == ''">$(DEVKITPRO)</_MonoLibnxDevkitPro>
+      <MonoAotOffsetsPrefix>$(_MonoLibnxDevkitPro)/devkitA64/bin/aarch64-none-elf</MonoAotOffsetsPrefix>
+      <MonoAotCMakeSysroot>$(_MonoLibnxDevkitPro)</MonoAotCMakeSysroot>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(MonoUseLLVMPackage)' == 'true'">

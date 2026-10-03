@@ -23,7 +23,7 @@
 
 #include "random.h"
 
-#if TARGET_LIBNX
+#if defined(HOST_LIBNX)
 #include <switch.h>
 #endif
 
@@ -81,7 +81,7 @@ int32_t minipal_get_cryptographically_secure_random_bytes(uint8_t* buffer, int32
 {
     assert(buffer != NULL);
 
-#ifdef TARGET_LIBNX
+#if defined(HOST_LIBNX)
     if (R_FAILED(csrngGetRandomBytes(buffer, bufferLength)))
     {
         randomGet(buffer, bufferLength);

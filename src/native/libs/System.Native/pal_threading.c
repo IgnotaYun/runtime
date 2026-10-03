@@ -23,6 +23,11 @@
 #endif
 #include <pthread.h>
 
+#if defined(TARGET_LIBNX)
+#define PTHREAD_STACK_MIN 0x1000
+#include <switch.h>
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // LowLevelMonitor - Represents a non-recursive mutex and condition
 

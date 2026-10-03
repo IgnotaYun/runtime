@@ -1340,10 +1340,14 @@ namespace System.Net.Sockets
             // We don't need to synchronize with Register.
             // This method is called when the handle gets released.
             // The Register method will throw ODE when it tries to use the handle at this point.
+#if TARGET_LIBNX
+            _asyncEngine?.UnregisterSocket(_socket.DangerousGetHandle());
+#else
             if (IsRegistered)
             {
                 SocketAsyncEngine.UnregisterSocket(this);
             }
+#endif
 
             return aborted;
         }
