@@ -243,6 +243,10 @@ static void tls_thread_destructor(void* data)
 		if (g_destructors[i])
 		{
 			void* value = tls->items[i];
+			// POSIX only invokes destructors for non-NULL values; calling
+			// them with NULL crashes e.g. mono's unregister_thread.
+			if (!value)
+				continue;
 			tls->items[i] = NULL;
 			tls->bitmap &= ~KEY(i);
 			g_destructors[i](value);

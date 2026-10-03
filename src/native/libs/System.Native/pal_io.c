@@ -1454,6 +1454,13 @@ int32_t SystemNative_CopyFile(intptr_t sourceFd, intptr_t destinationFd, int64_t
         return -1;
     }
 
+#if defined(TARGET_LIBNX)
+    // libnx/newlib's fchmod/futimens return ENOSYS; the data is already copied,
+    // and timestamps/modes are meaningless on the SD card anyway.
+    (void)ret;
+    return 0;
+#endif
+
     // Copy file times.
     struct stat_ sourceStat;
     while ((ret = fstat_(inFd, &sourceStat)) < 0 && errno == EINTR);
