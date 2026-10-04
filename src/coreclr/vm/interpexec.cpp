@@ -911,7 +911,7 @@ static void InterpBreakpoint(const int32_t *ip, const InterpMethodContextFrame *
 NOINLINE static void InterpThrow(InterpMethodContextFrame* pFrame, const int32_t* ip, RuntimeExceptionKind exType)
 {
     pFrame->ip = ip;
-#ifdef TARGET_LIBNX
+#if defined(TARGET_LIBNX) && defined(_DEBUG)
     if (pFrame->startIp != nullptr)
     {
         {
