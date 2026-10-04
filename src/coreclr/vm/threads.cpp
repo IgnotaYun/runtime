@@ -954,7 +954,7 @@ DWORD GetRuntimeId()
 DWORD_PTR Thread::OBJREF_HASH = OBJREF_TABSIZE;
 #endif
 
-#ifndef FEATURE_PORTABLE_HELPERS
+#if !defined(FEATURE_PORTABLE_HELPERS) || defined(TARGET_LIBNX) // libnx uses patchedcode.S write barriers
 
 extern "C" void STDCALL JIT_PatchedCodeStart();
 extern "C" void STDCALL JIT_PatchedCodeLast();
@@ -1054,7 +1054,7 @@ void InitThreadManagerPerfMapData()
         GC_TRIGGERS;
     }
     CONTRACTL_END;
-#ifndef FEATURE_PORTABLE_HELPERS
+#if !defined(FEATURE_PORTABLE_HELPERS) || defined(TARGET_LIBNX)
     if (IsWriteBarrierCopyEnabled())
     {
         size_t writeBarrierSize = (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart;

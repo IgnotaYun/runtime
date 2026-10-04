@@ -3043,7 +3043,7 @@ public:
         return STUB_CODE_BLOCK_UNKNOWN;
     }
 
-#if !defined(DACCESS_COMPILE) && !defined(TARGET_WASM)
+#if !defined(DACCESS_COMPILE) && !defined(TARGET_WASM) && !defined(TARGET_LIBNX)
     // Return execution control for interpreter bytecode breakpoints
     virtual IExecutionControl* GetExecutionControl();
 #endif // !DACCESS_COMPILE && !TARGET_WASM

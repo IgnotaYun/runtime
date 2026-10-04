@@ -4840,13 +4840,13 @@ void InterpreterJitManager::JitTokenToMethodRegionInfo(const METHODTOKEN& Method
     methodRegionInfo->coldSize         = 0;
 }
 
-#if !defined(DACCESS_COMPILE) && !defined(TARGET_WASM)
+#if !defined(DACCESS_COMPILE) && !defined(TARGET_WASM) && !defined(TARGET_LIBNX)
 IExecutionControl* InterpreterJitManager::GetExecutionControl()
 {
     LIMITED_METHOD_CONTRACT;
     return InterpreterExecutionControl::GetInstance();
 }
-#endif // !DACCESS_COMPILE && !TARGET_WASM
+#endif // !DACCESS_COMPILE && !TARGET_WASM && !TARGET_LIBNX
 
 #endif // FEATURE_INTERPRETER
 

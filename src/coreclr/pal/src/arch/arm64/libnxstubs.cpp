@@ -14,10 +14,13 @@
 #include "pal/signal.hpp"
 #include "pal/context.h"
 #include "pal/seh.hpp"
+#include "pal/thread.hpp"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <errno.h>
 #include <pwd.h>
 
@@ -37,26 +40,8 @@ DBG_DebugBreak()
     __builtin_trap();
 }
 
-/* context */
-
-extern "C" void
-RtlCaptureContext(OUT PCONTEXT pContextRecord)
-{
-    // No reliable way to capture the current context on libnx (no signals,
-    // no ucontext). Callers must tolerate a zero-filled record.
-    memset(pContextRecord, 0, sizeof(*pContextRecord));
-}
-
-extern "C" void
-CONTEXT_CaptureContext(LPCONTEXT lpContext)
-{
-    _ASSERT(!"CONTEXT_CaptureContext not implemented on libnx");
-}
-
-extern "C" void ThrowExceptionFromContextInternal(CONTEXT* context, PAL_SEHException* ex)
-{
-    _ASSERT(!"ThrowExceptionFromContextInternal not implemented on libnx");
-}
+/* context capture/throw come from the real arm64 asm (context2.S,
+   exceptionhelper.S) */
 
 /* unwind */
 
@@ -266,4 +251,132 @@ extern "C" int pthread_getschedparam(pthread_t thread, int *policy, struct sched
 {
     (void)thread; (void)policy; (void)param;
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// libc functions newlib-for-Switch does not provide
+// ---------------------------------------------------------------------------
+
+extern "C" int creat(const char *path, mode_t mode)
+{
+    return open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+}
+
+extern "C" unsigned int sleep(unsigned int seconds);
+extern "C" unsigned int alarm(unsigned int seconds);
+
+extern "C" int pause(void)
+{
+    // No signals on libnx; block "forever" (nobody will wake us).
+    for (;;)
+        sleep(3600);
+}
+
+extern "C" int pipe(int fds[2])
+{
+    (void)fds;
+    errno = ENOSYS;
+    return -1;
+}
+
+extern "C" int posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+    if (memptr == NULL || (alignment & (alignment - 1)) != 0 || alignment < sizeof(void*))
+        return EINVAL;
+    *memptr = aligned_alloc(alignment, size);
+    return *memptr ? 0 : ENOMEM;
+}
+
+// pread/pwrite: not in newlib's set for Switch. Sequential seek+op; single
+// process, so the fd-offset race does not exist.
+extern "C" ssize_t pread(int fd, void *buf, size_t count, off_t offset)
+{
+    off_t saved = lseek(fd, 0, SEEK_CUR);
+    if (saved == (off_t)-1)
+        return -1;
+    if (lseek(fd, offset, SEEK_SET) == (off_t)-1)
+        return -1;
+    ssize_t ret = read(fd, buf, count);
+    lseek(fd, saved, SEEK_SET);
+    return ret;
+}
+
+extern "C" ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset)
+{
+    off_t saved = lseek(fd, 0, SEEK_CUR);
+    if (saved == (off_t)-1)
+        return -1;
+    if (lseek(fd, offset, SEEK_SET) == (off_t)-1)
+        return -1;
+    ssize_t ret = write(fd, buf, count);
+    lseek(fd, saved, SEEK_SET);
+    return ret;
+}
+
+extern "C" long sysconf(int name)
+{
+    // Only the values the runtime actually asks for; anything else fails.
+    // _SC_NPROCESSORS_ONLN: 3 cores are usable by apps on Horizon (core 3 is
+    // reserved for the OS).
+    const int _SC_PAGESIZE_ = 8;         // newlib values (sys/unistd.h)
+    const int _SC_NPROCESSORS_CONF_ = 9;
+    const int _SC_NPROCESSORS_ONLN_ = 10;
+    if (name == _SC_NPROCESSORS_ONLN_ || name == _SC_NPROCESSORS_CONF_)
+        return 3;
+    if (name == _SC_PAGESIZE_)
+        return 4096;
+    errno = EINVAL;
+    return -1;
+}
+
+extern "C" int timespec_get(struct timespec *ts, int base)
+{
+    // TIME_UTC == 1
+    if (base != 1)
+        return 0;
+    if (clock_gettime(CLOCK_REALTIME, ts) != 0)
+        return 0;
+    return base;
+}
+
+extern "C" pid_t waitpid(pid_t pid, int *status, int options)
+{
+    (void)pid; (void)status; (void)options;
+    errno = ECHILD; // no child processes on libnx
+    return -1;
+}
+
+
+// PAL_ProbeMemory: pal/src/debug/debug.cpp (which provides it on other unixes)
+// is excluded for libnx. With no signals there is no graceful probe; report
+// everything readable (matches the "trust the pointer" behavior of the wasm
+// in-bounds check).
+#include "pal/palinternal.h"
+
+BOOL
+PALAPI
+PAL_ProbeMemory(
+    PVOID pBuffer,
+    DWORD cbBuffer,
+    BOOL fWriteAccess)
+{
+    (void)pBuffer; (void)cbBuffer; (void)fWriteAccess;
+    return TRUE;
+}
+
+// CorDBGetInterface lives in debug/ee (not built on libnx). The debugger is
+// never used; provide the symbol so ceemain.cpp links. Returning an error
+// makes InitializeDebugger abort cleanly if it is ever called.
+struct DebugInterface;
+extern "C" int CorDBGetInterface(DebugInterface** rcInterface)
+{
+    if (rcInterface) *rcInterface = NULL;
+    return (int)0x80004005; // E_FAIL
+}
+
+// InjectActivationInternal: signal.cpp is excluded for libnx. Activation
+// injection (thread hijacking for GC suspension) needs signals; not available.
+CorUnix::PAL_ERROR InjectActivationInternal(CorUnix::CPalThread* pThread)
+{
+    return ERROR_NOT_SUPPORTED;
 }

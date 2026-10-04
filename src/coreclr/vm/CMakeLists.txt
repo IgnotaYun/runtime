@@ -276,6 +276,16 @@ endif(FEATURE_READYTORUN)
 list(APPEND VM_SOURCES_DAC_AND_WKS_COMMON
     pregeneratedstringthunks.cpp
 )
+
+if(CLR_CMAKE_TARGET_LIBNX)
+    # debug/ee is not built on libnx; stub DAC globals table instead.
+    # VM_SOURCES_WKS is set() later, so everything libnx-specific must go into
+    # the DAC_AND_WKS list.
+    list(APPEND VM_SOURCES_DAC_AND_WKS_COMMON
+        dactable-libnx.cpp
+        libnx/portabilitystubs.cpp
+    )
+endif()
 list(APPEND VM_HEADERS_DAC_AND_WKS_COMMON
     pregeneratedstringthunks.h
     stringthunkhash.h
@@ -659,6 +669,23 @@ if (FEATURE_PORTABLE_HELPERS)
     else()
         list(APPEND VM_SOURCES_WKS
             ${PORTABLE_SOURCES_DIR}/WriteBarriers.cpp
+        )
+    endif()
+
+    if(CLR_CMAKE_TARGET_LIBNX AND CLR_CMAKE_TARGET_ARCH_ARM64)
+        # Even with portable helpers, the interpreter path on arm64 still needs
+        # the native call/EH stubs (CallDescrWorkerInternal, CallEHFunclet, ...).
+        list(APPEND VM_SOURCES_WKS_ARCH_ASM
+            ${ARCH_SOURCES_DIR}/asmhelpers.S
+            ${ARCH_SOURCES_DIR}/calldescrworkerarm64.S
+            ${ARCH_SOURCES_DIR}/CachedInterfaceDispatchCoreCLR.S
+            ${ARCH_SOURCES_DIR}/patchedcode.S
+            ${ARCH_SOURCES_DIR}/pinvokestubs.S
+            ${ARCH_SOURCES_DIR}/thunktemplates.S
+            ${RUNTIME_DIR}/${ARCH_SOURCES_DIR}/StubDispatch.S
+        )
+        set(VM_HEADERS_WKS_ARCH_ASM
+            ${ARCH_SOURCES_DIR}/asmconstants.h
         )
     endif()
 

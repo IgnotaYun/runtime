@@ -375,8 +375,13 @@ add_subdirectory(binder)
 add_subdirectory(dlls)
 
 if (NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
-  add_subdirectory(unwinder)
   add_subdirectory(interop)
+endif()
+
+# The unwinder is pure unwind-info parsing (no OS services); needed for GC
+# stack walks and EH on libnx too.
+if (NOT CLR_CMAKE_TARGET_ARCH_WASM)
+  add_subdirectory(unwinder)
 endif()
 
 if(NOT CLR_CMAKE_HOST_MACCATALYST AND NOT CLR_CMAKE_HOST_IOS AND NOT CLR_CMAKE_HOST_TVOS AND NOT CLR_CMAKE_TARGET_LIBNX)

@@ -41,13 +41,7 @@ endif (CLR_CMAKE_HOST_WIN32)
 
 add_definitions(-DFX_VER_INTERNALNAME_STR=CoreCLR.dll)
 
-if (CLR_CMAKE_TARGET_LIBNX)
-    # Statically linked into the homebrew NRO; no shared libraries on libnx.
-    add_library_clr(coreclr
-        STATIC
-        ${CLR_SOURCES}
-    )
-elseif (NOT CLR_CMAKE_HOST_ARCH_WASM)
+if (NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
     add_library_clr(coreclr
         SHARED
         ${CLR_SOURCES}
@@ -65,7 +59,7 @@ elseif (NOT CLR_CMAKE_HOST_ARCH_WASM)
     set(LIB_INTEROP interop)
 endif()
 
-if (CLR_CMAKE_HOST_UNIX AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
+if (CLR_CMAKE_HOST_UNIX AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
     set(LIB_UNWINDER unwinder_wks)
 endif ()
 
@@ -211,7 +205,10 @@ if (CLR_CMAKE_HOST_ANDROID)
     target_link_libraries(coreclr PUBLIC log)
 endif()
 
-if (CLR_CMAKE_HOST_ANDROID OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS OR CLR_CMAKE_HOST_MACCATALYST)
+# libnx is linked into a plain Makefile-based homebrew app, not a CMake
+# target, so INTERFACE propagation is useless: fold the objects directly into
+# the archive like the mobile targets do.
+if (CLR_CMAKE_HOST_ANDROID OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS OR CLR_CMAKE_HOST_MACCATALYST OR CLR_CMAKE_TARGET_LIBNX)
     target_link_libraries(coreclr_static
         PRIVATE
         coreclrminipal_objects
@@ -264,16 +261,16 @@ if(CLR_CMAKE_TARGET_WIN32)
 endif(CLR_CMAKE_TARGET_WIN32)
 
 # add the install targets
-if(NOT CLR_CMAKE_HOST_ARCH_WASM)
+if(NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
     install_clr(TARGETS coreclr DESTINATIONS . sharedFramework COMPONENT runtime)
 else()
     install_clr(TARGETS coreclr_static DESTINATIONS . sharedFramework COMPONENT runtime)
     if (TARGET coreclr_gen_static)
         install_clr(TARGETS coreclr_gen_static DESTINATIONS . sharedFramework COMPONENT runtime)
     endif()
-endif(NOT CLR_CMAKE_HOST_ARCH_WASM)
+endif()
 
-if(CLR_CMAKE_HOST_MACCATALYST OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS OR CLR_CMAKE_HOST_ANDROID OR CLR_CMAKE_HOST_ARCH_WASM)
+if(CLR_CMAKE_HOST_MACCATALYST OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS OR CLR_CMAKE_HOST_ANDROID OR CLR_CMAKE_HOST_ARCH_WASM OR CLR_CMAKE_TARGET_LIBNX)
     install_clr(TARGETS coreclr_static DESTINATIONS . COMPONENT runtime)
     if (TARGET coreclr_gen_static)
         install_clr(TARGETS coreclr_gen_static DESTINATIONS . COMPONENT runtime)

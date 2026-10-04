@@ -786,6 +786,10 @@ namespace System.Net.Sockets
                                             // "losing" the notification and causing the operation to pend indefinitely.
             private AsyncOperation? _tail;   // Queue of pending IO operations to process when data becomes available.
 
+#if TARGET_LIBNX
+            internal bool IsEmpty => _tail == null;
+#endif
+
             // The _queueLock is used to ensure atomic access to the queue state above.
             // The lock is only ever held briefly, to read and/or update queue state, and
             // never around any external call, e.g. OS call or user code invocation.
@@ -1267,6 +1271,10 @@ namespace System.Net.Sockets
         /// <summary>An index into <see cref="SocketAsyncEngine"/>'s table of all contexts that are currently <see cref="IsRegistered"/>.</summary>
         internal int GlobalContextIndex = -1;
 
+#if TARGET_LIBNX
+        internal bool HasPendingWrites => !_sendQueue.IsEmpty;
+#endif
+
         private readonly object _registerLock = new object();
 
         public SocketAsyncContext(SafeSocketHandle socket)
@@ -1334,10 +1342,14 @@ namespace System.Net.Sockets
             // We don't need to synchronize with Register.
             // This method is called when the handle gets released.
             // The Register method will throw ODE when it tries to use the handle at this point.
+#if TARGET_LIBNX
+            _asyncEngine?.UnregisterSocket(_socket.DangerousGetHandle());
+#else
             if (IsRegistered)
             {
                 SocketAsyncEngine.UnregisterSocket(this);
             }
+#endif
 
             return aborted;
         }

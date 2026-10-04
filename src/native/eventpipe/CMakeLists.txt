@@ -37,6 +37,10 @@ elseif (FEATURE_PERFTRACING_PAL_TCP)
     target_sources(dn-diagnosticserver-pal INTERFACE
         ds-ipc-pal-socket.c
     )
+elseif (CLR_CMAKE_TARGET_LIBNX)
+    target_sources(dn-diagnosticserver-pal INTERFACE
+        ds-ipc-pal-stub.c
+    )
 elseif(HOST_WIN32 OR CLR_CMAKE_TARGET_WIN32)
     target_sources(dn-diagnosticserver-pal INTERFACE
         ds-ipc-pal-namedpipe.c

@@ -40,7 +40,7 @@ namespace System
             }
 
             public override int Read(Span<byte> buffer) =>
-#if !TARGET_WASI
+#if !TARGET_WASI && !TARGET_LIBNX
                 _useReadLine ?
                     ConsolePal.StdInReader.ReadLine(buffer) :
 #endif

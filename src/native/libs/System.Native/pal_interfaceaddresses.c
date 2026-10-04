@@ -110,7 +110,7 @@ static inline uint8_t mask2prefix(uint8_t* mask, int length)
 }
 #endif /* TARGET_WASI */
 
-#if defined(AF_LINK)
+#if defined(AF_LINK) && !defined(TARGET_LIBNX)
 static uint8_t GetLinkLayerAddressLength(const struct sockaddr_dl* address, size_t destinationLength)
 {
 #if defined(TARGET_SUNOS)
@@ -258,7 +258,7 @@ int32_t SystemNative_EnumerateInterfaceAddresses(void* context,
                 onLinkLayerFound(context, current->ifa_name, &lla);
             }
         }
-#elif defined(AF_LINK)
+#elif defined(AF_LINK) && !defined(TARGET_LIBNX)
         else if (family == AF_LINK)
         {
             if (onLinkLayerFound != NULL)
@@ -465,7 +465,7 @@ int32_t SystemNative_GetNetworkInterfaces(int32_t * interfaceCount, NetworkInter
             ai->PrefixLength = mask2prefix((uint8_t*)&(((struct sockaddr_in6*)ifaddrsEntry->ifa_netmask)->sin6_addr), NUM_BYTES_IN_IPV6_ADDRESS);
             ai++;
         }
-#if defined(AF_LINK)
+#if defined(AF_LINK) && !defined(TARGET_LIBNX)
         else if (ifaddrsEntry->ifa_addr->sa_family == AF_LINK)
         {
             struct sockaddr_dl* sadl = (struct sockaddr_dl*)ifaddrsEntry->ifa_addr;

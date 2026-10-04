@@ -2212,7 +2212,28 @@ int64_t SystemNative_ReadV(intptr_t fd, IOVector* vectors, int32_t vectorCount)
     while (1)
     {
         int64_t count;
+#if defined(TARGET_LIBNX)
+        // newlib for Switch has no readv; read each vector in order, stopping
+        // at the first short read to mimic readv semantics.
+        {
+            int64_t current;
+            count = 0;
+            for (int i = 0; i < allowedVectorCount; i++)
+            {
+                while ((current = read(fileDescriptor, vectors[i].Base, (size_t)vectors[i].Count)) < 0 && errno == EINTR);
+                if (current < 0)
+                {
+                    count = count > 0 ? count : current;
+                    break;
+                }
+                count += current;
+                if (current != (int64_t)vectors[i].Count)
+                    break;
+            }
+        }
+#else
         while ((count = readv(fileDescriptor, (struct iovec*)vectors, allowedVectorCount)) < 0 && errno == EINTR);
+#endif
 
         if (count != -1 || (errno != EAGAIN && errno != EWOULDBLOCK))
         {
@@ -2292,7 +2313,28 @@ int64_t SystemNative_WriteV(intptr_t fd, IOVector* vectors, int32_t vectorCount)
     while (1)
     {
         int64_t count;
+#if defined(TARGET_LIBNX)
+        // newlib for Switch has no writev; write each vector in order, stopping
+        // at the first short write to mimic writev semantics.
+        {
+            int64_t current;
+            count = 0;
+            for (int i = 0; i < allowedVectorCount; i++)
+            {
+                while ((current = write(fileDescriptor, vectors[i].Base, (size_t)vectors[i].Count)) < 0 && errno == EINTR);
+                if (current < 0)
+                {
+                    count = count > 0 ? count : current;
+                    break;
+                }
+                count += current;
+                if (current != (int64_t)vectors[i].Count)
+                    break;
+            }
+        }
+#else
         while ((count = writev(fileDescriptor, (struct iovec*)vectors, allowedVectorCount)) < 0 && errno == EINTR);
+#endif
 
         if (count != -1 || (errno != EAGAIN && errno != EWOULDBLOCK))
         {

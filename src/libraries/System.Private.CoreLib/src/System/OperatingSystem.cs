@@ -42,6 +42,8 @@ namespace System
         "SOLARIS"
 #elif TARGET_HAIKU
         "HAIKU"
+#elif TARGET_LIBNX
+        "LIBNX"
 #else
 #error Unknown OS, add a corresponding TARGET_* constant to System.Private.CoreLib.Shared.projitems
 #endif

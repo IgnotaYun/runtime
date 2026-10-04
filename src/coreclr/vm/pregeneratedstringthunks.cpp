@@ -345,6 +345,25 @@ void ProcessInjectStringThunksFixup(ReadyToRunInfo * pR2RInfo, PCCOR_SIGNATURE p
     LIMITED_METHOD_CONTRACT;
 }
 
+#ifdef FEATURE_PORTABLE_ENTRYPOINTS
+// Non-WASM portable-entrypoint targets (e.g. libnx) don't pregenerate string
+// thunks; there is nothing pending to add.
+void AddPendingPortableEntryPointThunkUnderLock(LoaderAllocator* pLoaderAllocator, MethodDesc* pMD)
+{
+    LIMITED_METHOD_CONTRACT;
+}
+
+void ClearPendingThunkResolutionUnderLock(DynamicMethodDesc* pMD)
+{
+    LIMITED_METHOD_CONTRACT;
+}
+
+void UnregisterLoaderAllocatorForPendingThunkResolution(LoaderAllocator* pLoaderAllocator)
+{
+    LIMITED_METHOD_CONTRACT;
+}
+#endif // FEATURE_PORTABLE_ENTRYPOINTS
+
 #endif // TARGET_WASM
 
 #endif // !DACCESS_COMPILE

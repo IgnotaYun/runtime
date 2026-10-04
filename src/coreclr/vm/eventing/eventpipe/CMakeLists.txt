@@ -66,6 +66,14 @@ get_property(diagnosticserver_sources TARGET dn-diagnosticserver PROPERTY INTERF
 get_property(eventpipe_sources TARGET dn-eventpipe PROPERTY INTERFACE_SOURCES)
 set_source_files_properties(${diagnosticserver_sources} ${eventpipe_sources} PROPERTIES LANGUAGE CXX)
 
+if(CLR_CMAKE_TARGET_LIBNX)
+    # debug-pal (which normally provides the ds-ipc PAL) doesn't link the
+    # diagnosticserver PAL on libnx; fold the stub in here instead.
+    target_link_libraries(eventpipe_objs PRIVATE dn-diagnosticserver-pal)
+    get_property(diagnosticserver_pal_sources TARGET dn-diagnosticserver-pal PROPERTY INTERFACE_SOURCES)
+    set_source_files_properties(${diagnosticserver_pal_sources} PROPERTIES LANGUAGE CXX)
+endif()
+
 # Build EventPipe and DiagnosticServer as unity-builds.
 set (SHARED_EVENTPIPE_SOURCE_PATH "${CLR_SRC_NATIVE_DIR}/eventpipe")
 

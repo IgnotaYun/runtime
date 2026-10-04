@@ -36,8 +36,8 @@ ASMCONSTANTS_C_ASSERT(FRAMETYPE_InlinedCallFrame == (int)FrameIdentifier::Inline
 #define DynamicHelperFrameFlags_ObjectArg   1
 #define DynamicHelperFrameFlags_ObjectArg2  2
 
-#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 #define ThisPtrRetBufPrecodeData__Target      0x00
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 ASMCONSTANTS_C_ASSERT(ThisPtrRetBufPrecodeData__Target == offsetof(ThisPtrRetBufPrecodeData, Target));
 #endif // !FEATURE_PORTABLE_ENTRYPOINTS
 
@@ -198,8 +198,8 @@ ASMCONSTANTS_C_ASSERT(CONTEXT_Pc == offsetof(T_CONTEXT,Pc))
 ASMCONSTANTS_C_ASSERT(SIZEOF__FaultingExceptionFrame        == sizeof(FaultingExceptionFrame));
 ASMCONSTANTS_C_ASSERT(FaultingExceptionFrame__m_fFilterExecuted == offsetof(FaultingExceptionFrame, m_fFilterExecuted));
 
-#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 #define SIZEOF__FixupPrecode                 24
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 ASMCONSTANTS_C_ASSERT(SIZEOF__FixupPrecode == sizeof(FixupPrecode));
 #endif // !FEATURE_PORTABLE_ENTRYPOINTS
 #define MethodDesc_ALIGNMENT_SHIFT           3
@@ -243,20 +243,16 @@ ASMCONSTANTS_C_ASSERT(InlinedCallFrame__m_pCalleeSavedFP == offsetof(InlinedCall
 #define               InlinedCallFrame__m_pThread 0x30
 ASMCONSTANTS_C_ASSERT(InlinedCallFrame__m_pThread == offsetof(InlinedCallFrame, m_pThread))
 
-#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 #define FixupPrecodeData__Target 0x00
-ASMCONSTANTS_C_ASSERT(FixupPrecodeData__Target            == offsetof(FixupPrecodeData, Target))
-
 #define FixupPrecodeData__MethodDesc 0x08
-ASMCONSTANTS_C_ASSERT(FixupPrecodeData__MethodDesc        == offsetof(FixupPrecodeData, MethodDesc))
-
 #define FixupPrecodeData__PrecodeFixupThunk 0x10
-ASMCONSTANTS_C_ASSERT(FixupPrecodeData__PrecodeFixupThunk == offsetof(FixupPrecodeData, PrecodeFixupThunk))
-
 #define StubPrecodeData__Target 0x08
-ASMCONSTANTS_C_ASSERT(StubPrecodeData__Target            == offsetof(StubPrecodeData, Target))
-
 #define StubPrecodeData__SecretParam 0x00
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
+ASMCONSTANTS_C_ASSERT(FixupPrecodeData__Target            == offsetof(FixupPrecodeData, Target))
+ASMCONSTANTS_C_ASSERT(FixupPrecodeData__MethodDesc        == offsetof(FixupPrecodeData, MethodDesc))
+ASMCONSTANTS_C_ASSERT(FixupPrecodeData__PrecodeFixupThunk == offsetof(FixupPrecodeData, PrecodeFixupThunk))
+ASMCONSTANTS_C_ASSERT(StubPrecodeData__Target            == offsetof(StubPrecodeData, Target))
 ASMCONSTANTS_C_ASSERT(StubPrecodeData__SecretParam        == offsetof(StubPrecodeData, SecretParam))
 #endif // !FEATURE_PORTABLE_ENTRYPOINTS
 
