@@ -453,7 +453,9 @@ static NOINLINE CallStubHeader *InvokeManagedMethodHelper(MethodDesc *pMD, PCODE
 
 void InvokeManagedMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet, PCODE target, Object** pContinuationRet)
 {
-#ifdef TARGET_LIBNX
+#if defined(TARGET_LIBNX) && defined(_DEBUG)
+    // Per-managed-call trace: extremely expensive under emulation (one svc
+    // per call). Bring-up only; Checked/Release must not pay for it.
     libnx_pal_log_stack("invokemgd", (void*)pMD, (size_t)target);
 #endif
     CONTRACTL
