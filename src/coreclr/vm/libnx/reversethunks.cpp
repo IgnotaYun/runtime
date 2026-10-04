@@ -15,6 +15,7 @@
 #include "precode_portable.hpp"
 
 extern "C" void libnx_revthunk_log(const char* src, int found);
+extern "C" void svcOutputDebugString(const char*, size_t);
 
 // Defined below; declared here for the anonymous-namespace LookupThunk.
 static const struct ReverseThunkMapEntry* LibnxLookupExtraThunk(const char* source);
@@ -170,4 +171,170 @@ void* GetUnmanagedCallersOnlyThunk(MethodDesc* pMD)
     _ASSERTE((*value->Target) == pMD);
     _ASSERTE(value->EntryPoint != NULL);
     return value->EntryPoint;
+}
+
+// ---------------------------------------------------------------------------
+// Marshal.GetFunctionPointerForDelegate support.
+//
+// On portable-entrypoint platforms there is no runtime code generation, so
+// UMEntryThunks cannot exist. libnx instead hands out one of a fixed pool of
+// precompiled native thunks for the simple delegate shapes native libraries
+// actually request (currently: void(void*) callbacks, e.g. FNA3D_LogFunc).
+// The thunk indexes into a slot table holding a strong handle to the delegate.
+
+#include "interpexec.h"
+#include "comdelegate.h"
+
+namespace
+{
+    constexpr int kDelegateThunkCount = 16;
+    OBJECTHANDLE g_delegateThunkTargets[kDelegateThunkCount] = {0};
+    MethodDesc* g_delegateThunkInvoke[kDelegateThunkCount] = {0};
+    int g_delegateThunkAlloc = 0;
+
+    void LibnxDelegateThunkDispatch(int slot, void* a0)
+    {
+        CONTRACTL
+        {
+            THROWS;
+            GC_TRIGGERS;
+            MODE_ANY;
+        }
+        CONTRACTL_END;
+
+        OBJECTHANDLE h = g_delegateThunkTargets[slot];
+        _ASSERTE(h != NULL);
+
+        if (GetThreadNULLOk() == NULL)
+        {
+            // Native thread the runtime has never seen; no Thread object, no
+            // interp context. Nothing sane to do.
+            const char msg[] = "libnx: delegate thunk on unattached thread\n";
+            svcOutputDebugString(msg, sizeof(msg) - 1);
+            return;
+        }
+
+        Object* target;
+        MethodDesc* md;
+        int64_t args[2];
+        int n = 0;
+        {
+            // Object access (ObjectFromHandle, delegate fields) must happen in
+            // cooperative GC mode (debug OBJECTREF validation enforces it).
+            GCX_COOP();
+            OBJECTREF del = ObjectFromHandle(h);
+            DelegateObject* d = (DelegateObject*)OBJECTREFToObject(del);
+            OBJECTREF targetRef = d->GetTarget();
+            target = OBJECTREFToObject(targetRef);
+            // Static-method delegates keep the real target in _methodPtrAux.
+            PCODE pc = d->GetMethodPtrAux() != (PCODE)0 ? d->GetMethodPtrAux() : d->GetMethodPtr();
+            md = PortableEntryPoint::GetMethodDesc(pc);
+            _ASSERTE(md != NULL);
+
+            if (target != NULL)
+                args[n++] = (int64_t)target;
+            MethodDesc* pInvoke = g_delegateThunkInvoke[slot];
+            if (pInvoke != NULL)
+            {
+                MetaSig invokeSig(pInvoke);
+                if (invokeSig.NumFixedArgs() == 1)
+                    args[n++] = (int64_t)a0;
+            }
+        }
+
+        // ExecuteInterpretedMethodFromUnmanaged expects preemptive mode on
+        // entry (it calls DoPrestub with CallerGCMode::Preemptive); the
+        // GCX_COOP above has unwound by here. Under gcConservative nothing
+        // moves, so holding raw object pointers across the call is safe.
+        ExecuteInterpretedMethodFromUnmanaged(md, (int8_t*)args, n * sizeof(int64_t), nullptr, (PCODE)&LibnxDelegateThunkDispatch);
+    }
+}
+
+// One thunk per slot: the slot index must be a compile-time constant.
+#define LIBNX_DELEGATE_THUNK(i) \
+    extern "C" void LibnxDelegateThunk##i(void* a0) { LibnxDelegateThunkDispatch(i, a0); }
+
+LIBNX_DELEGATE_THUNK(0)  LIBNX_DELEGATE_THUNK(1)  LIBNX_DELEGATE_THUNK(2)  LIBNX_DELEGATE_THUNK(3)
+LIBNX_DELEGATE_THUNK(4)  LIBNX_DELEGATE_THUNK(5)  LIBNX_DELEGATE_THUNK(6)  LIBNX_DELEGATE_THUNK(7)
+LIBNX_DELEGATE_THUNK(8)  LIBNX_DELEGATE_THUNK(9)  LIBNX_DELEGATE_THUNK(10) LIBNX_DELEGATE_THUNK(11)
+LIBNX_DELEGATE_THUNK(12) LIBNX_DELEGATE_THUNK(13) LIBNX_DELEGATE_THUNK(14) LIBNX_DELEGATE_THUNK(15)
+
+static void* const g_delegateThunks[kDelegateThunkCount] = {
+    (void*)&LibnxDelegateThunk0,  (void*)&LibnxDelegateThunk1,
+    (void*)&LibnxDelegateThunk2,  (void*)&LibnxDelegateThunk3,
+    (void*)&LibnxDelegateThunk4,  (void*)&LibnxDelegateThunk5,
+    (void*)&LibnxDelegateThunk6,  (void*)&LibnxDelegateThunk7,
+    (void*)&LibnxDelegateThunk8,  (void*)&LibnxDelegateThunk9,
+    (void*)&LibnxDelegateThunk10, (void*)&LibnxDelegateThunk11,
+    (void*)&LibnxDelegateThunk12, (void*)&LibnxDelegateThunk13,
+    (void*)&LibnxDelegateThunk14, (void*)&LibnxDelegateThunk15,
+};
+
+// Returns a native function pointer that invokes the delegate, or NULL if the
+// delegate shape is not supported by the pool.
+extern "C" void* LibnxGetDelegateCallback(OBJECTREF delegateObj)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    DelegateObject* d = (DelegateObject*)OBJECTREFToObject(delegateObj);
+
+    // _methodPtrAux is set for delegates over static methods (the _methodPtr
+    // is a shuffle thunk; aux holds the real target). Multicast delegates are
+    // not supported by the pool.
+    // Multicast delegates are not supported by the pool (not detected here;
+    // FNA-style single callbacks only).
+
+    MethodTable* pMT = d->GetMethodTable();
+    MethodDesc* pInvokeMeth = COMDelegate::FindDelegateInvokeMethod(pMT);
+    MetaSig sig(pInvokeMeth);
+
+    // Supported shapes: void(void) and void(pointer-sized scalar).
+    if (sig.IsReturnTypeVoid() == FALSE)
+    {
+        svcOutputDebugString("libnx: delegate cb: non-void return\n", 42);
+        return NULL;
+    }
+    UINT numArgs = sig.NumFixedArgs();
+    if (numArgs > 1)
+    {
+        svcOutputDebugString("libnx: delegate cb: too many args\n", 39);
+        return NULL;
+    }
+    if (numArgs == 1)
+    {
+        CorElementType et = sig.NextArg();
+        switch (et)
+        {
+        case ELEMENT_TYPE_I:
+        case ELEMENT_TYPE_U:
+        case ELEMENT_TYPE_I8:
+        case ELEMENT_TYPE_U8:
+        case ELEMENT_TYPE_PTR:
+        case ELEMENT_TYPE_FNPTR:
+        case ELEMENT_TYPE_I4:
+        case ELEMENT_TYPE_U4:
+            break;
+        default:
+        {
+            char nb[96];
+            int nn = snprintf(nb, sizeof(nb), "libnx: delegate cb: unsupported arg type %d\n", (int)et);
+            svcOutputDebugString(nb, nn);
+            return NULL;
+        }
+        }
+    }
+
+    int slot = InterlockedIncrement(&g_delegateThunkAlloc) - 1;
+    if (slot >= kDelegateThunkCount)
+        return NULL;
+
+    g_delegateThunkInvoke[slot] = pInvokeMeth;
+    g_delegateThunkTargets[slot] = GetAppDomain()->CreateHandle(delegateObj);
+    return g_delegateThunks[slot];
 }

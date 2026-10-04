@@ -2321,7 +2321,18 @@ extern "C" void ExecuteInterpretedMethodFromUnmanaged(MethodDesc* pMD, int8_t* a
     // entrypoint by GetUnmanagedCallersOnlyThunk and never reach this path, so the interpreter byte code
     // must exist here.
     _ASSERTE(targetIp != NULL);
+#ifdef TARGET_LIBNX
+    // GC mode on entry to the interpreter: UnmanagedCallersOnly methods must
+    // be entered in preemptive mode (ExecuteInterpretedMethod fail-fasts
+    // otherwise and transitions to cooperative itself); any other method must
+    // be entered in cooperative mode (interp OBJECTREF validation requires
+    // it). DoPrestub above runs the compiler in preemptive mode. Use the
+    // compiler-recorded flag so this matches ExecuteInterpretedMethod's own
+    // check exactly.
+    { GCX_MAYBE_COOP(!targetIp->Method->unmanagedCallersOnly); (void)ExecuteInterpretedMethodWithArgs((TADDR)targetIp, args, argSize, ret, callerIp); }
+#else
     (void)ExecuteInterpretedMethodWithArgs((TADDR)targetIp, args, argSize, ret, callerIp);
+#endif
 }
 #endif // FEATURE_INTERPRETER
 

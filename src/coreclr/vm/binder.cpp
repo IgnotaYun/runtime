@@ -105,7 +105,9 @@ PTR_MethodTable CoreLibBinder::LookupClassLocal(BinderClassID id)
     return pMT;
 }
 
+#ifdef TARGET_LIBNX
 extern "C" void svcOutputDebugString(const char*, size_t);
+#endif
 
 NOINLINE MethodDesc * CoreLibBinder::LookupMethod(BinderMethodID id)
 {
@@ -157,9 +159,11 @@ MethodDesc * CoreLibBinder::LookupMethodLocal(BinderMethodID id)
 
     if (pMD == NULL)
     {
+#ifdef TARGET_LIBNX
         char bb[256];
         int bn = snprintf(bb, sizeof(bb), "binder: MISSING method id=%d name='%s' class=%d\n", (int)id, d->name, (int)d->classID);
         svcOutputDebugString(bb, bn);
+#endif
     }
     _ASSERTE(pMD != NULL && ("EE expects method to exist"));
 

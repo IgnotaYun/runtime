@@ -874,7 +874,7 @@ void GetConstNativeSigSimdContext(const native_context_t *mc, void const **fp_pt
 }
 
 #elif !defined(__APPLE__) // TARGET_FREEBSD
-define LIBNX_ARM64_CONTEXT_BRANCH 1
+
 
 #define MCREG_X0(mc)      ((mc).regs[0])
 #define MCREG_X1(mc)      ((mc).regs[1])

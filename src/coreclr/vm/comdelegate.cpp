@@ -10,6 +10,9 @@
 
 
 #include "common.h"
+#ifdef TARGET_LIBNX
+extern "C" void* LibnxGetDelegateCallback(OBJECTREF delegateObj);
+#endif
 #include "comdelegate.h"
 #include "invokeutil.h"
 #include "excep.h"
@@ -1286,7 +1289,15 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
     else
     {
 #ifdef FEATURE_PORTABLE_ENTRYPOINTS
+#ifdef TARGET_LIBNX
+        // libnx: no runtime code generation, but a pool of precompiled thunks
+        // covers the simple callback shapes (e.g. FNA3D log delegates).
+        pCode = (PCODE)LibnxGetDelegateCallback((OBJECTREF)pDelegate);
+        if (pCode == (PCODE)NULL)
+            COMPlusThrow(kPlatformNotSupportedException, W("PlatformNotSupported_DynamicEntrypoint"));
+#else
         COMPlusThrow(kPlatformNotSupportedException, W("PlatformNotSupported_DynamicEntrypoint"));
+#endif
 
 #else // !FEATURE_PORTABLE_ENTRYPOINTS
         UMEntryThunkData*   pUMEntryThunk   = NULL;

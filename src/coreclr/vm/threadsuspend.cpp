@@ -13,6 +13,8 @@
 
 #ifdef TARGET_LIBNX
 extern "C" void nx_gc_phase(const char*);
+#else
+#define nx_gc_phase(phase) ((void)0)
 #endif
 
 #include "threadsuspend.h"

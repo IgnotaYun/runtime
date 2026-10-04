@@ -89,11 +89,13 @@ namespace System.Threading
         // On Linux arm and arm64, we do not use PThread mutex-backed named mutexes for compatibility with previous .NET versions.
         // On libnx, process-shared robust pthread mutexes do not exist (System.Native uses
         // pal_crossprocessmutex_unsupported.c).
+#pragma warning disable CA1418 // 'LIBNX' is a custom target platform of this fork
         private static bool UsePThreadMutexes =>
 #if (TARGET_ARM || TARGET_ARM64)
             !OperatingSystem.IsLinux() &&
 #endif
             !OperatingSystem.IsApplePlatform() && !OperatingSystem.IsFreeBSD() && !OperatingSystem.IsOpenBSD() && !OperatingSystem.IsHaiku() && !OperatingSystem.IsOSPlatform("LIBNX");
+#pragma warning restore CA1418
 
         private readonly SharedMemoryProcessDataHeader<NamedMutexProcessDataBase> _processDataHeader = header;
         protected nuint _lockCount;

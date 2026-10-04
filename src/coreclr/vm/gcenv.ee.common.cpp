@@ -6,6 +6,8 @@
 #ifdef TARGET_LIBNX
 extern "C" void nx_gc_phase(const char*);
 extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
+#else
+#define nx_gc_phase(phase) ((void)0)
 #endif
 #include "gcenv.h"
 #include <exinfo.h>
