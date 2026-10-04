@@ -15,6 +15,8 @@ bool minipal_increase_descriptor_limit(void)
 {
 #ifdef __wasm__
     // WebAssembly cannot set limits
+#elif defined(__SWITCH__)
+    // libnx/newlib has no rlimit support
 #elif TARGET_LINUX_MUSL
     // Setting RLIMIT_NOFILE breaks debugging of coreclr on Alpine Linux for some reason
 #elif HAVE_RESOURCE_H

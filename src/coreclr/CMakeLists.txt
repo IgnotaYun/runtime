@@ -78,7 +78,7 @@ include(components.cmake)
 #---------------------------
 # Build the single file host
 #---------------------------
-if(NOT CLR_CROSS_COMPONENTS_BUILD AND NOT CLR_CMAKE_TARGET_APPLE_MOBILE AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if(NOT CLR_CROSS_COMPONENTS_BUILD AND NOT CLR_CMAKE_TARGET_APPLE_MOBILE AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
   set(CLR_SINGLE_FILE_HOST_ONLY 1)
   add_subdirectory(${CLR_SRC_NATIVE_DIR}/corehost/apphost/static Corehost.Static)
   add_dependencies(runtime singlefilehost)
@@ -142,7 +142,7 @@ endif()
 #----------------------------------------------------
 # Build the test watchdog alongside the CLR
 #----------------------------------------------------
-if(NOT CLR_CMAKE_HOST_MACCATALYST AND NOT CLR_CMAKE_HOST_IOS AND NOT CLR_CMAKE_HOST_TVOS AND NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI)
+if(NOT CLR_CMAKE_HOST_MACCATALYST AND NOT CLR_CMAKE_HOST_IOS AND NOT CLR_CMAKE_HOST_TVOS AND NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_LIBNX)
   add_subdirectory("${CLR_SRC_NATIVE_DIR}/watchdog" test-watchdog)
 endif()
 
@@ -172,12 +172,12 @@ endif()
 include_directories("pal/prebuilt/inc")
 include_directories(${CLR_ARTIFACTS_OBJ_DIR})
 
-if ((NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI) OR CLR_CROSS_COMPONENTS_BUILD)
+if ((NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_LIBNX) OR CLR_CROSS_COMPONENTS_BUILD)
   add_subdirectory(tools/aot/jitinterface)
 endif ()
 
 if(NOT CLR_CROSS_COMPONENTS_BUILD)
-  if(NOT CLR_CMAKE_HOST_ARCH_WASM)
+  if(NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
     add_subdirectory(nativeaot)
   endif()
 endif(NOT CLR_CROSS_COMPONENTS_BUILD)
@@ -292,9 +292,9 @@ endif(CLR_CMAKE_TARGET_WIN32 AND FEATURE_EVENT_TRACE)
 add_subdirectory(debug/dbgutil)
 
 if(CLR_CMAKE_HOST_UNIX)
-  if(CLR_CMAKE_HOST_OSX OR (CLR_CMAKE_HOST_LINUX AND NOT CLR_CMAKE_HOST_UNIX_X86 AND NOT CLR_CMAKE_HOST_ANDROID))
+  if((CLR_CMAKE_HOST_OSX OR (CLR_CMAKE_HOST_LINUX AND NOT CLR_CMAKE_HOST_UNIX_X86 AND NOT CLR_CMAKE_HOST_ANDROID)) AND NOT CLR_CMAKE_TARGET_LIBNX)
     add_subdirectory(debug/createdump)
-  endif(CLR_CMAKE_HOST_OSX OR (CLR_CMAKE_HOST_LINUX AND NOT CLR_CMAKE_HOST_UNIX_X86 AND NOT CLR_CMAKE_HOST_ANDROID))
+  endif()
 
   # The CoreCLR PAL used to redefine NULL, which caused a number of null conversion and arithmetic
   # warnings and errors to be suppressed.
@@ -360,26 +360,26 @@ if (CLR_CMAKE_BUILD_TOOLS)
 endif(CLR_CMAKE_BUILD_TOOLS)
 add_subdirectory(gcinfo)
 
-if (NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if (NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
   add_subdirectory(jit)
 endif()
 
 add_subdirectory(vm)
 add_subdirectory(md)
 
-if (NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if (NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
   add_subdirectory(debug)
 endif()
 
 add_subdirectory(binder)
 add_subdirectory(dlls)
 
-if (NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if (NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
   add_subdirectory(unwinder)
   add_subdirectory(interop)
 endif()
 
-if(NOT CLR_CMAKE_HOST_MACCATALYST AND NOT CLR_CMAKE_HOST_IOS AND NOT CLR_CMAKE_HOST_TVOS)
+if(NOT CLR_CMAKE_HOST_MACCATALYST AND NOT CLR_CMAKE_HOST_IOS AND NOT CLR_CMAKE_HOST_TVOS AND NOT CLR_CMAKE_TARGET_LIBNX)
   add_subdirectory(tools)
   add_subdirectory(hosts)
-endif(NOT CLR_CMAKE_HOST_MACCATALYST AND NOT CLR_CMAKE_HOST_IOS AND NOT CLR_CMAKE_HOST_TVOS)
+endif(NOT CLR_CMAKE_HOST_MACCATALYST AND NOT CLR_CMAKE_HOST_IOS AND NOT CLR_CMAKE_HOST_TVOS AND NOT CLR_CMAKE_TARGET_LIBNX)

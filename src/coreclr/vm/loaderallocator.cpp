@@ -1237,7 +1237,7 @@ void LoaderAllocator::Init(BYTE *pExecutableHeapMemory)
                                                                            &s_stubPrecodeHeapConfig);
 #endif // !FEATURE_PORTABLE_ENTRYPOINTS
 
-#if defined(FEATURE_STUBPRECODE_DYNAMIC_HELPERS) && defined(FEATURE_READYTORUN)
+#if defined(FEATURE_STUBPRECODE_DYNAMIC_HELPERS) && defined(FEATURE_READYTORUN) && !defined(FEATURE_PORTABLE_ENTRYPOINTS)
     if (IsCollectible())
     {
         m_pDynamicHelpersStubHeap = m_pNewStubPrecodeHeap;
@@ -1447,7 +1447,9 @@ void LoaderAllocator::Terminate()
     #ifdef FEATURE_STUBPRECODE_DYNAMIC_HELPERS
         if (m_pDynamicHelpersStubHeap != NULL)
         {
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
             if (m_pDynamicHelpersStubHeap != m_pNewStubPrecodeHeap)
+#endif
             {
                 m_pDynamicHelpersStubHeap->~InterleavedLoaderHeap();
             }

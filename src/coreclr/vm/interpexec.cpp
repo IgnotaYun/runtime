@@ -399,6 +399,10 @@ MethodDesc* GetTargetPInvokeMethodDesc(PCODE target)
     RangeSection * pRS = ExecutionManager::FindCodeRange(target, ExecutionManager::GetScanFlags());
     if (pRS != NULL && pRS->_flags & RangeSection::RANGE_SECTION_RANGELIST)
     {
+#ifdef FEATURE_PORTABLE_ENTRYPOINTS
+        // Portable entrypoints don't use stub precodes; no PInvoke import
+        // precode to unwrap.
+#else
         if (pRS->_pRangeList->GetCodeBlockKind() == STUB_CODE_BLOCK_STUBPRECODE)
         {
             if (((StubPrecode*)target)->GetType() == PRECODE_PINVOKE_IMPORT)
@@ -406,6 +410,7 @@ MethodDesc* GetTargetPInvokeMethodDesc(PCODE target)
                 return dac_cast<PTR_MethodDesc>(((PInvokeImportPrecode*)target)->GetMethodDesc());
             }
         }
+#endif // FEATURE_PORTABLE_ENTRYPOINTS
     }
 
     return NULL;

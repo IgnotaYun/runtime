@@ -7,13 +7,43 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+#if !defined(TARGET_LIBNX)
 #include <sys/utsname.h>
+#endif
+
 #if defined(TARGET_ANDROID)
 #include <sys/system_properties.h>
 #elif defined(TARGET_OSX)
 #include <sys/sysctl.h>
 #elif defined(TARGET_SUNOS)
 #include <sys/systeminfo.h>
+#endif
+
+#if defined(TARGET_LIBNX)
+struct utsname {
+    char sysname[100];
+    char nodename[100];
+    char release[100];
+    char version[100];
+    char machine[100];
+};
+
+int uname(struct utsname* name)
+{
+    if (name == NULL)
+    {
+        return -1;
+    }
+
+    strcpy(name->sysname, "libnx");
+    strcpy(name->nodename, "libnx");
+    strcpy(name->release, "1.0.0");
+    strcpy(name->version, "1.0.0");
+    strcpy(name->machine, "libnx");
+
+    return 0;
+}
 #endif
 
 char* SystemNative_GetUnixRelease(void)

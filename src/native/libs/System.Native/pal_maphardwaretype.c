@@ -25,10 +25,10 @@
 #else
 #include <linux/if_arp.h>
 #endif
-#elif defined(AF_LINK)
+#elif defined(AF_LINK) && !defined(TARGET_LIBNX)
 #include <net/if_dl.h>
 #include <net/if_types.h>
-#elif defined(TARGET_WASI)
+#elif defined(TARGET_WASI) || defined(TARGET_LIBNX)
 #else
 #error System must have AF_PACKET or AF_LINK.
 #endif
@@ -68,7 +68,7 @@ uint16_t MapHardwareType(uint16_t nativeType)
         default:
             return NetworkInterfaceType_Unknown;
     }
-#elif defined(AF_LINK)
+#elif defined(AF_LINK) && !defined(TARGET_LIBNX)
     switch (nativeType)
     {
         case IFT_ETHER:
@@ -120,7 +120,7 @@ uint16_t MapHardwareType(uint16_t nativeType)
         default:
             return NetworkInterfaceType_Unknown;
     }
-#elif defined(TARGET_WASI)
+#elif defined(TARGET_WASI) || defined(TARGET_LIBNX)
     return NetworkInterfaceType_Unknown;
 #endif
 }

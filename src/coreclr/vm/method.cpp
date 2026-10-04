@@ -3442,8 +3442,14 @@ void MethodDesc::TrySetInitialCodeEntryPointForVersionableMethod(
     }
     else
     {
+#ifdef FEATURE_PORTABLE_ENTRYPOINTS
+        // Portable entrypoints are never versionable-with-precode; they always
+        // have entry point slots to backpatch.
+        _ASSERTE(FALSE);
+#else
         _ASSERTE(IsVersionableWithPrecode());
         GetOrCreatePrecode()->SetTargetInterlocked(entryPoint, TRUE /* fOnlyRedirectFromPrestub */);
+#endif // FEATURE_PORTABLE_ENTRYPOINTS
     }
 }
 #endif // FEATURE_CODE_VERSIONING
@@ -3511,11 +3517,16 @@ void MethodDesc::ResetCodeEntryPoint()
         return;
     }
 
+#ifdef FEATURE_PORTABLE_ENTRYPOINTS
+    // Portable entrypoints are never versionable-with-precode.
+    _ASSERTE(FALSE);
+#else
     _ASSERTE(IsVersionableWithPrecode());
     if (HasPrecode())
     {
         GetPrecode()->ResetTargetInterlocked();
     }
+#endif // FEATURE_PORTABLE_ENTRYPOINTS
 }
 #endif // FEATURE_CODE_VERSIONING
 

@@ -26,6 +26,8 @@
 #if defined(__linux__)
 #include <sys/syscall.h>
 #include <unistd.h>
+#elif defined(HOST_LIBNX)
+#include <switch.h>
 #elif defined(__FreeBSD__)
 #include <pthread_np.h>
 #elif defined(__OpenBSD__)
@@ -76,6 +78,8 @@ size_t minipal_get_current_thread_id_no_cache(void)
     tid = (size_t)find_thread(NULL);
 #elif defined(__sun)
     tid = (size_t)pthread_self();
+#elif defined(HOST_LIBNX)
+    tid = (size_t)threadGetCurHandle();
 #elif defined(__wasm)
     tid = (size_t)(void*)pthread_self();
 #else
@@ -90,8 +94,13 @@ extern size_t minipal_get_current_thread_id(void);
 
 int minipal_set_thread_name(pthread_t thread, const char* name)
 {
-#ifdef __wasm
+#if defined(__wasm)
     // WASM does not support pthread_setname_np yet: https://github.com/emscripten-core/emscripten/pull/18751
+    return 0;
+#elif defined(HOST_LIBNX)
+    // newlib only exposes pthread_setname_np under __GNU_VISIBLE; thread naming is cosmetic, skip it.
+    (void)thread;
+    (void)name;
     return 0;
 #else
     const char* threadName = name;

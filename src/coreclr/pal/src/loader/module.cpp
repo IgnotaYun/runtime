@@ -47,10 +47,10 @@ SET_DEFAULT_DEBUG_CHANNEL(LOADER); // some headers have code with asserts, so do
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
-#elif defined(TARGET_WASI)
-// WASI has no dynamic linker and no <link.h>. PAL_CopyModuleData is stubbed
-// to return 0 in the TARGET_WASM branch below; <link.h>'s dl_phdr_info /
-// link_map are not referenced anywhere this file actually compiles on WASI.
+#elif defined(TARGET_WASI) || defined(TARGET_LIBNX)
+// WASI/libnx have no dynamic linker and no <link.h>. PAL_CopyModuleData is
+// stubbed in the TARGET_WASM branch below; <link.h>'s dl_phdr_info /
+// link_map are not referenced anywhere this file compiles on WASI/libnx.
 #else
 #include <link.h>
 #endif // __APPLE__
@@ -934,8 +934,8 @@ PAL_CopyModuleData(PVOID moduleBase, PVOID destinationBufferStart, PVOID destina
     }
     return param.result;
 }
-#elif defined(TARGET_WASM)
-// WASM-TODO: get rid of whole module loading on wasm
+#elif defined(TARGET_WASM) || defined(TARGET_LIBNX)
+// WASM/libnx: no module loading
 PALIMPORT
 int
 PALAPI
@@ -1034,7 +1034,7 @@ BOOL LOADInitializeModules()
 
     exe_module.self = (HMODULE)&exe_module;
     exe_module.dl_handle = dlopen(nullptr, RTLD_LAZY);
-#ifndef TARGET_WASM // wasm does not support shared libraries
+#if !defined(TARGET_WASM) && !defined(TARGET_LIBNX) // wasm/libnx do not support shared libraries
     if (exe_module.dl_handle == nullptr)
     {
         ERROR("Executable module will be broken : dlopen(nullptr) failed\n");

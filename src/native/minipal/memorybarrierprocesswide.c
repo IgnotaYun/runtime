@@ -8,7 +8,7 @@
 #include <assert.h>
 #include <minipal/memorybarrierprocesswide.h>
 
-#ifndef HOST_WASM
+#if !defined(HOST_WASM) && !defined(__SWITCH__)
 #include <pthread.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -84,7 +84,7 @@ static pthread_mutex_t g_flushProcessWriteBuffersMutex;
 
 static size_t s_pageSize = 0;
 #endif // !HOST_APPLE
-#endif // !HOST_WASM
+#endif // !HOST_WASM && !__SWITCH__
 
 static bool s_initializedMemoryBarrierSuccessfullyInitialized = false;
 
@@ -95,8 +95,9 @@ bool minipal_initialize_memory_barrier_process_wide(void)
         return true;
     }
 
-#ifdef HOST_WASM
-    // browser/wasm is currently single threaded
+#if defined(HOST_WASM) || defined(__SWITCH__)
+    // browser/wasm is currently single threaded; libnx has no usable
+    // process-wide barrier mechanism, treated as a no-op
 #elif defined(HOST_APPLE)
     // Apple platforms do not support membarrier, so we use a different mechanism
 #else
@@ -141,7 +142,7 @@ bool minipal_initialize_memory_barrier_process_wide(void)
             return false;
         }
     }
-#endif // !HOST_WASM && !HOST_APPLE
+#endif // !HOST_WASM && !HOST_APPLE && !__SWITCH__
 
     s_initializedMemoryBarrierSuccessfullyInitialized = true;
     return true;
@@ -152,8 +153,9 @@ void minipal_memory_barrier_process_wide(void)
 {
     assert(s_initializedMemoryBarrierSuccessfullyInitialized);
 
-#ifdef HOST_WASM
-    // browser/wasm is currently single threaded
+#if defined(HOST_WASM) || defined(__SWITCH__)
+    // browser/wasm is currently single threaded; libnx has no usable
+    // process-wide barrier mechanism, treated as a no-op
 #elif defined(HOST_APPLE)
     mach_msg_type_number_t cThreads;
     thread_act_t *pThreads;

@@ -7,6 +7,14 @@
 
 extern uint32_t minipal_getpagesize(void);
 
+#elif defined(HOST_LIBNX)
+
+// The page size on Horizon is 4KB.
+uint32_t minipal_getpagesize(void)
+{
+    return 4 * 1024;
+}
+
 #else
 
 #include <unistd.h>

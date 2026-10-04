@@ -3,6 +3,13 @@ cmake_minimum_required(VERSION 3.10..3.26)
 
 project(System.Globalization.Native C)
 
+if (CLR_CMAKE_TARGET_LIBNX)
+    set(CMAKE_ICU_DIR $ENV{ICU_NX_INSTALL_DIR})
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations -Wno-address")
+    # message test
+    message(STATUS "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
+endif()
+
 if(CLR_CMAKE_TARGET_UNIX OR CLR_CMAKE_TARGET_WASI)
     if (ANDROID_FORCE_ICU_DATA_DIR)
         add_definitions(-DANDROID_FORCE_ICU_DATA_DIR)
@@ -108,7 +115,7 @@ if (LOCAL_BUILD)
     # For minipal files
     include_directories(../../)
     include_directories(${CMAKE_CURRENT_BINARY_DIR})
-elseif (CLR_CMAKE_TARGET_APPLE_MOBILE OR CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI)
+elseif (CLR_CMAKE_TARGET_APPLE_MOBILE OR CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI OR CLR_CMAKE_TARGET_LIBNX)
     add_definitions(-DSTATIC_ICU)
     set(NATIVEGLOBALIZATION_SOURCES ${NATIVEGLOBALIZATION_SOURCES} pal_icushim_static.c)
 else()

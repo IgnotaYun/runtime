@@ -5,6 +5,7 @@ unset(LINUX)
 unset(FREEBSD)
 unset(OPENBSD)
 unset(ILLUMOS)
+unset(LIBNX)
 unset(ANDROID)
 unset(TIZEN)
 unset(HAIKU)
@@ -19,6 +20,11 @@ if(EXISTS ${CROSS_ROOTFS}/bin/freebsd-version)
 elseif(OPENBSD_PROBE)
   set(CMAKE_SYSTEM_NAME OpenBSD)
   set(OPENBSD 1)
+elseif(EXISTS ${CROSS_ROOTFS}/libnx/include/switch.h AND TARGET_ARCH_NAME STREQUAL "arm64")
+  set(CMAKE_SYSTEM_NAME Libnx)
+  set(LIBNX 1)
+  set(DEVKITA64 "${CROSS_ROOTFS}/devkitA64")
+  set(PORTLIBS "${CROSS_ROOTFS}/portlibs/switch")
 elseif(EXISTS ${CROSS_ROOTFS}/usr/platform/i86pc)
   set(CMAKE_SYSTEM_NAME SunOS)
   set(ILLUMOS 1)
@@ -55,6 +61,8 @@ elseif(TARGET_ARCH_NAME STREQUAL "arm64")
     set(TOOLCHAIN "aarch64-alpine-linux-musl")
   elseif(LINUX)
     set(TOOLCHAIN "aarch64-linux-gnu")
+  elseif(LIBNX)
+    set(TOOLCHAIN "aarch64-none-elf")
     if(TIZEN)
       set(TIZEN_TOOLCHAIN "aarch64-tizen-linux-gnu")
     endif()
@@ -241,6 +249,35 @@ elseif(HAIKU)
 
     # let CMake set up the correct search paths
     include(Platform/Haiku)
+elseif(LIBNX)
+    set(CMAKE_INCLUDE_PATH "")
+    # libnx API-compat shims (dlfcn.h, sys/mman.h) must be visible to every target
+    include_directories(BEFORE ${CMAKE_CURRENT_LIST_DIR}/../../../src/coreclr/pal/src/libnx/include)
+    include_directories(SYSTEM ${DEVKITA64}/aarch64-none-elf/include)
+    include_directories(SYSTEM ${CROSS_ROOTFS}/libnx/include)
+    include_directories(SYSTEM ${CROSS_ROOTFS}/portlibs/switch/include/)
+
+    list(APPEND CMAKE_PROGRAM_PATH "${CROSS_ROOTFS}/tools/bin")
+    list(APPEND CMAKE_PROGRAM_PATH "${DEVKITA64}/bin")
+
+    set(CMAKE_FIND_ROOT_PATH ${DEVKITPRO} ${CROSS_ROOTFS} ${PORTLIBS})
+    set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS FALSE)
+    add_definitions(-DSWITCH -D__SWITCH__)
+    # _GNU_SOURCE exposes getline and friends in newlib headers
+    add_definitions(-D_GNU_SOURCE)
+    add_compile_options(-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE)
+    add_compile_options(-g -Wall -O2 -ffunction-sections)
+    # NOTE: exceptions stay ENABLED (unlike dkp defaults): CoreCLR PAL SEH rides C++ EH.
+
+    set(CMAKE_SYSTEM_PREFIX_PATH "${CROSS_ROOTFS}/devkitA64/")
+
+    set(CMAKE_C_COMPILER "${DEVKITA64}/bin/aarch64-none-elf-gcc")
+    set(CMAKE_CXX_COMPILER "${DEVKITA64}/bin/aarch64-none-elf-g++")
+    set(CMAKE_AR "${DEVKITA64}/bin/aarch64-none-elf-gcc-ar")
+
+    set(CMAKE_EXE_LINKER_FLAGS "" CACHE STRING "Executable linker flags")
+    set(CMAKE_STATIC_LINKER_FLAGS "" CACHE STRING "Library linker flags")
+    set(CMAKE_MODULE_LINKER_FLAGS "" CACHE STRING "Module linker flags")
 else()
     set(CMAKE_SYSROOT "${CROSS_ROOTFS}")
 
@@ -308,7 +345,7 @@ endif()
 
 # Specify compile options
 
-if((TARGET_ARCH_NAME MATCHES "^(arm|arm64|armel|armv6|loongarch64|ppc64le|riscv64|s390x|x64|x86)$" AND NOT ANDROID AND NOT FREEBSD AND NOT OPENBSD) OR ILLUMOS OR HAIKU)
+if((TARGET_ARCH_NAME MATCHES "^(arm|arm64|armel|armv6|loongarch64|ppc64le|riscv64|s390x|x64|x86)$" AND NOT ANDROID AND NOT FREEBSD AND NOT OPENBSD) OR ILLUMOS OR HAIKU OR LIBNX)
   set(CMAKE_C_COMPILER_TARGET ${TOOLCHAIN})
   set(CMAKE_CXX_COMPILER_TARGET ${TOOLCHAIN})
   set(CMAKE_ASM_COMPILER_TARGET ${TOOLCHAIN})

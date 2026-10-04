@@ -16,7 +16,10 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if !defined(TARGET_LIBNX)
 #include <sys/mman.h>
+#include <sys/uio.h>
+#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -26,7 +29,6 @@
 #if !HAVE_MAKEDEV_FILEH && HAVE_MAKEDEV_SYSMACROSH
 #include <sys/sysmacros.h>
 #endif
-#include <sys/uio.h>
 #if HAVE_SYSLOG_H
 #include <syslog.h>
 #endif
@@ -810,7 +812,7 @@ int32_t SystemNative_FSync(intptr_t fd)
 int32_t SystemNative_FLock(intptr_t fd, int32_t operation)
 {
     int32_t result;
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     while ((result = flock(ToFileDescriptor(fd), operation)) < 0 && errno == EINTR);
 #else /* TARGET_WASI */
     result = EINTR;
@@ -865,7 +867,7 @@ int32_t SystemNative_SymLink(const char* target, const char* linkPath)
 
 void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint32_t* minorNumber)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     dev_t castedDev = (dev_t)dev;
 #if !defined(TARGET_HAIKU)
     *majorNumber = (uint32_t)major(castedDev);
@@ -884,7 +886,7 @@ void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint
 
 int32_t SystemNative_MkNod(const char* pathName, uint32_t mode, uint32_t major, uint32_t minor)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
 #if !defined(TARGET_HAIKU)
     dev_t dev = (dev_t)makedev(major, minor);
 #else
@@ -895,14 +897,14 @@ int32_t SystemNative_MkNod(const char* pathName, uint32_t mode, uint32_t major, 
     int32_t result;
     while ((result = mknod(pathName, (mode_t)mode, dev)) < 0 && errno == EINTR);
     return result;
-#else /* TARGET_WASI */
+#else /* TARGET_WASI || TARGET_LIBNX */
     return EINTR;
 #endif /* TARGET_WASI */
 }
 
 int32_t SystemNative_MkFifo(const char* pathName, uint32_t mode)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     int32_t result;
     while ((result = mkfifo(pathName, (mode_t)mode)) < 0 && errno == EINTR);
     return result;
@@ -961,7 +963,7 @@ intptr_t SystemNative_MksTemps(char* pathTemplate, int32_t suffixLength)
     {
         pathTemplate[firstSuffixIndex] = firstSuffixChar;
     }
-#elif TARGET_WASI
+#elif TARGET_WASI || TARGET_LIBNX
     assert_msg(false, "Not supported on WASI", 0);
     result = -1;
 #else
@@ -970,6 +972,7 @@ intptr_t SystemNative_MksTemps(char* pathTemplate, int32_t suffixLength)
     return  result;
 }
 
+#if !defined(TARGET_LIBNX)
 static int32_t ConvertMMapProtection(int32_t protection)
 {
     if (protection == PAL_PROT_NONE)
@@ -1077,6 +1080,29 @@ void* SystemNative_MMap(void* address,
     assert(ret != NULL);
     return ret;
 }
+#else
+void* SystemNative_MMap(void* address,
+                      uint64_t length,
+                      int32_t protection, // bitwise OR of PAL_PROT_*
+                      int32_t flags,      // bitwise OR of PAL_MAP_*, but PRIVATE and SHARED are mutually exclusive.
+                      intptr_t fd,
+                      int64_t offset)
+{
+    if (length > SIZE_MAX)
+    {
+        errno = ERANGE;
+        return NULL;
+    }
+
+    if (protection & PAL_PROT_EXEC || fd > 0)
+    {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    return malloc(length);
+}
+#endif
 
 int32_t SystemNative_MUnmap(void* address, uint64_t length)
 {
@@ -1086,7 +1112,12 @@ int32_t SystemNative_MUnmap(void* address, uint64_t length)
         return -1;
     }
 
+#if defined(TARGET_LIBNX)
+    free(address);
+    return 0;
+#else
     return munmap(address, (size_t)length);
+#endif
 }
 
 int32_t SystemNative_MProtect(void* address, uint64_t length, int32_t protection)
@@ -1097,9 +1128,18 @@ int32_t SystemNative_MProtect(void* address, uint64_t length, int32_t protection
         return -1;
     }
 
-    protection = ConvertMMapProtection(protection);
+#if defined(TARGET_LIBNX)
+    if (protection & PAL_PROT_EXEC)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
+    return 0;
+#else
+    protection = ConvertMMapProtection(protection);
     return mprotect(address, (size_t)length, protection);
+#endif
 }
 
 int32_t SystemNative_MAdvise(void* address, uint64_t length, int32_t advice)
@@ -1113,13 +1153,13 @@ int32_t SystemNative_MAdvise(void* address, uint64_t length, int32_t advice)
     switch (advice)
     {
         case PAL_MADV_DONTFORK:
-#if defined(MADV_DONTFORK) && !defined(TARGET_WASM)
+#if defined(MADV_DONTFORK) && !defined(TARGET_WASM) && !defined(TARGET_LIBNX)
             return madvise(address, (size_t)length, MADV_DONTFORK);
 #else
             (void)address, (void)length, (void)advice;
             errno = ENOTSUP;
             return -1;
-#endif // MADV_DONTFORK && !TARGET_WASM
+#endif // MADV_DONTFORK && !TARGET_WASM && !TARGET_LIBNX
         default:
             break; // fall through to error
     }
@@ -1136,7 +1176,8 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
         errno = ERANGE;
         return -1;
     }
-
+    
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     flags = ConvertMSyncFlags(flags);
     if (flags == -1)
     {
@@ -1144,7 +1185,6 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
         return -1;
     }
 
-#if !defined(TARGET_WASI)
     return msync(address, (size_t)length, flags);
 #else
     return -1;
@@ -1153,6 +1193,7 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
 
 int64_t SystemNative_SysConf(int32_t name)
 {
+    #if !defined(TARGET_LIBNX)
     switch (name)
     {
         case PAL_SC_CLK_TCK:
@@ -1162,6 +1203,7 @@ int64_t SystemNative_SysConf(int32_t name)
         default:
             break; // fall through to error
     }
+    #endif
 
     assert_msg(false, "Unknown SysConf name", (int)name);
     errno = EINVAL;
@@ -1351,7 +1393,7 @@ int32_t SystemNative_RmDir(const char* path)
 
 void SystemNative_Sync(void)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX)
     sync();
 #endif /* TARGET_WASI */
 }
@@ -1550,6 +1592,13 @@ int32_t SystemNative_CopyFile(intptr_t sourceFd, intptr_t destinationFd, int64_t
         return -1;
     }
 
+#if defined(TARGET_LIBNX)
+    // libnx/newlib's fchmod/futimens return ENOSYS; the data is already copied,
+    // and timestamps/modes are meaningless on the SD card anyway.
+    (void)ret;
+    return 0;
+#endif
+
     // Copy file times.
     struct stat_ sourceStat;
     while ((ret = fstat_(inFd, &sourceStat)) < 0 && errno == EINTR);
@@ -1711,6 +1760,136 @@ static uint32_t FileSystemNameSupportsLocking(const char* fileSystemName)
         return 0;
     }
     return 1;
+
+    if (strcmp(fileSystemName, "adfs") == 0) result = 0xADF5;
+    else if (strcmp(fileSystemName, "affs") == 0) result = 0xADFF;
+    else if (strcmp(fileSystemName, "afs") == 0) result = 0x5346414F;
+    else if (strcmp(fileSystemName, "anoninode") == 0) result = 0x09041934;
+    else if (strcmp(fileSystemName, "apfs") == 0) result = 0x1A;
+    else if (strcmp(fileSystemName, "aufs") == 0) result = 0x61756673;
+    else if (strcmp(fileSystemName, "autofs") == 0) result = 0x0187;
+    else if (strcmp(fileSystemName, "autofs4") == 0) result = 0x6D4A556D;
+    else if (strcmp(fileSystemName, "befs") == 0) result = 0x42465331;
+    else if (strcmp(fileSystemName, "bdevfs") == 0) result = 0x62646576;
+    else if (strcmp(fileSystemName, "bfs") == 0) result = 0x1BADFACE;
+    else if (strcmp(fileSystemName, "bpf_fs") == 0) result = 0xCAFE4A11;
+    else if (strcmp(fileSystemName, "binfmt_misc") == 0) result = 0x42494E4D;
+    else if (strcmp(fileSystemName, "bootfs") == 0) result = 0xA56D3FF9;
+    else if (strcmp(fileSystemName, "btrfs") == 0) result = 0x9123683E;
+    else if (strcmp(fileSystemName, "ceph") == 0) result = 0x00C36400;
+    else if (strcmp(fileSystemName, "cgroupfs") == 0) result = 0x0027E0EB;
+    else if (strcmp(fileSystemName, "cgroup2fs") == 0) result = 0x63677270;
+    else if (strcmp(fileSystemName, "cifs") == 0) result = 0xFF534D42;
+    else if (strcmp(fileSystemName, "coda") == 0) result = 0x73757245;
+    else if (strcmp(fileSystemName, "coherent") == 0) result = 0x012FF7B7;
+    else if (strcmp(fileSystemName, "configfs") == 0) result = 0x62656570;
+    else if (strcmp(fileSystemName, "cpuset") == 0) result = 0x01021994;
+    else if (strcmp(fileSystemName, "cramfs") == 0) result = 0x28CD3D45;
+    else if (strcmp(fileSystemName, "ctfs") == 0) result = 0x01021994;
+    else if (strcmp(fileSystemName, "debugfs") == 0) result = 0x64626720;
+    else if (strcmp(fileSystemName, "dev") == 0) result = 0x1373;
+    else if (strcmp(fileSystemName, "devfs") == 0) result = 0x1373;
+    else if (strcmp(fileSystemName, "devpts") == 0) result = 0x1CD1;
+    else if (strcmp(fileSystemName, "ecryptfs") == 0) result = 0xF15F;
+    else if (strcmp(fileSystemName, "efs") == 0) result = 0x00414A53;
+    else if (strcmp(fileSystemName, "exofs") == 0) result = 0x5DF5;
+    else if (strcmp(fileSystemName, "ext") == 0) result = 0x137D;
+    else if (strcmp(fileSystemName, "ext2_old") == 0) result = 0xEF51;
+    else if (strcmp(fileSystemName, "ext2") == 0) result = 0xEF53;
+    else if (strcmp(fileSystemName, "ext3") == 0) result = 0xEF53;
+    else if (strcmp(fileSystemName, "ext4") == 0) result = 0xEF53;
+    else if (strcmp(fileSystemName, "f2fs") == 0) result = 0xF2F52010;
+    else if (strcmp(fileSystemName, "fat") == 0) result = 0x4006;
+    else if (strcmp(fileSystemName, "fd") == 0) result = 0xF00D1E;
+    else if (strcmp(fileSystemName, "fhgfs") == 0) result = 0x19830326;
+    else if (strcmp(fileSystemName, "fuse") == 0) result = 0x65735546;
+    else if (strcmp(fileSystemName, "fuseblk") == 0) result = 0x65735546;
+    else if (strcmp(fileSystemName, "fusectl") == 0) result = 0x65735543;
+    else if (strcmp(fileSystemName, "futexfs") == 0) result = 0x0BAD1DEA;
+    else if (strcmp(fileSystemName, "gfsgfs2") == 0) result = 0x1161970;
+    else if (strcmp(fileSystemName, "gfs2") == 0) result = 0x01161970;
+    else if (strcmp(fileSystemName, "gpfs") == 0) result = 0x47504653;
+    else if (strcmp(fileSystemName, "hfs") == 0) result = 0x4244;
+    else if (strcmp(fileSystemName, "hfsplus") == 0) result = 0x482B;
+    else if (strcmp(fileSystemName, "hpfs") == 0) result = 0xF995E849;
+    else if (strcmp(fileSystemName, "hugetlbfs") == 0) result = 0x958458F6;
+    else if (strcmp(fileSystemName, "inodefs") == 0) result = 0x11307854;
+    else if (strcmp(fileSystemName, "inotifyfs") == 0) result = 0x2BAD1DEA;
+    else if (strcmp(fileSystemName, "isofs") == 0) result = 0x9660;
+    else if (strcmp(fileSystemName, "jffs") == 0) result = 0x07C0;
+    else if (strcmp(fileSystemName, "jffs2") == 0) result = 0x72B6;
+    else if (strcmp(fileSystemName, "jfs") == 0) result = 0x3153464A;
+    else if (strcmp(fileSystemName, "kafs") == 0) result = 0x6B414653;
+    else if (strcmp(fileSystemName, "lofs") == 0) result = 0xEF53;
+    else if (strcmp(fileSystemName, "logfs") == 0) result = 0xC97E8168;
+    else if (strcmp(fileSystemName, "lustre") == 0) result = 0x0BD00BD0;
+    else if (strcmp(fileSystemName, "minix_old") == 0) result = 0x137F;
+    else if (strcmp(fileSystemName, "minix") == 0) result = 0x138F;
+    else if (strcmp(fileSystemName, "minix2") == 0) result = 0x2468;
+    else if (strcmp(fileSystemName, "minix2v2") == 0) result = 0x2478;
+    else if (strcmp(fileSystemName, "minix3") == 0) result = 0x4D5A;
+    else if (strcmp(fileSystemName, "mntfs") == 0) result = 0x01021994;
+    else if (strcmp(fileSystemName, "mqueue") == 0) result = 0x19800202;
+    else if (strcmp(fileSystemName, "msdos") == 0) result = 0x4D44;
+    else if (strcmp(fileSystemName, "nfs") == 0) result = 0x6969;
+    else if (strcmp(fileSystemName, "nfsd") == 0) result = 0x6E667364;
+    else if (strcmp(fileSystemName, "nilfs") == 0) result = 0x3434;
+    else if (strcmp(fileSystemName, "novell") == 0) result = 0x564C;
+    else if (strcmp(fileSystemName, "ntfs") == 0) result = 0x5346544E;
+    else if (strcmp(fileSystemName, "objfs") == 0) result = 0x01021994;
+    else if (strcmp(fileSystemName, "ocfs2") == 0) result = 0x7461636F;
+    else if (strcmp(fileSystemName, "openprom") == 0) result = 0x9FA1;
+    else if (strcmp(fileSystemName, "omfs") == 0) result = 0xC2993D87;
+    else if (strcmp(fileSystemName, "overlay") == 0) result = 0x794C7630;
+    else if (strcmp(fileSystemName, "overlayfs") == 0) result = 0x794C764F;
+    else if (strcmp(fileSystemName, "panfs") == 0) result = 0xAAD7AAEA;
+    else if (strcmp(fileSystemName, "pipefs") == 0) result = 0x50495045;
+    else if (strcmp(fileSystemName, "proc") == 0) result = 0x9FA0;
+    else if (strcmp(fileSystemName, "pstorefs") == 0) result = 0x6165676C;
+    else if (strcmp(fileSystemName, "qnx4") == 0) result = 0x002F;
+    else if (strcmp(fileSystemName, "qnx6") == 0) result = 0x68191122;
+    else if (strcmp(fileSystemName, "ramfs") == 0) result = 0x858458F6;
+    else if (strcmp(fileSystemName, "reiserfs") == 0) result = 0x52654973;
+    else if (strcmp(fileSystemName, "romfs") == 0) result = 0x7275;
+    else if (strcmp(fileSystemName, "rootfs") == 0) result = 0x53464846;
+    else if (strcmp(fileSystemName, "rpc_pipefs") == 0) result = 0x67596969;
+    else if (strcmp(fileSystemName, "samba") == 0) result = 0x517B;
+    else if (strcmp(fileSystemName, "sdcardfs") == 0) result = 0x5DCA2DF5;
+    else if (strcmp(fileSystemName, "securityfs") == 0) result = 0x73636673;
+    else if (strcmp(fileSystemName, "selinux") == 0) result = 0xF97CFF8C;
+    else if (strcmp(fileSystemName, "sffs") == 0) result = 0x786F4256;
+    else if (strcmp(fileSystemName, "sharefs") == 0) result = 0x01021994;
+    else if (strcmp(fileSystemName, "smb") == 0) result = 0x517B;
+    else if (strcmp(fileSystemName, "smb2") == 0) result = 0xFE534D42;
+    else if (strcmp(fileSystemName, "sockfs") == 0) result = 0x534F434B;
+    else if (strcmp(fileSystemName, "squashfs") == 0) result = 0x73717368;
+    else if (strcmp(fileSystemName, "sysfs") == 0) result = 0x62656572;
+    else if (strcmp(fileSystemName, "sysv2") == 0) result = 0x012FF7B6;
+    else if (strcmp(fileSystemName, "sysv4") == 0) result = 0x012FF7B5;
+    else if (strcmp(fileSystemName, "tmpfs") == 0) result = 0x01021994;
+    else if (strcmp(fileSystemName, "tracefs") == 0) result = 0x74726163;
+    else if (strcmp(fileSystemName, "ubifs") == 0) result = 0x24051905;
+    else if (strcmp(fileSystemName, "udf") == 0) result = 0x15013346;
+    else if (strcmp(fileSystemName, "ufs") == 0) result = 0x00011954;
+    else if (strcmp(fileSystemName, "ufscigam") == 0) result = 0x54190100;
+    else if (strcmp(fileSystemName, "ufs2") == 0) result = 0x19540119;
+    else if (strcmp(fileSystemName, "usbdevice") == 0) result = 0x9FA2;
+    else if (strcmp(fileSystemName, "v9fs") == 0) result = 0x01021997;
+    else if (strcmp(fileSystemName, "vagrant") == 0) result = 0x786F4256;
+    else if (strcmp(fileSystemName, "vboxfs") == 0) result = 0x786F4256;
+    else if (strcmp(fileSystemName, "vmhgfs") == 0) result = 0xBACBACBC;
+    else if (strcmp(fileSystemName, "vxfs") == 0) result = 0xA501FCF5;
+    else if (strcmp(fileSystemName, "vzfs") == 0) result = 0x565A4653;
+    else if (strcmp(fileSystemName, "xenfs") == 0) result = 0xABBA1974;
+    else if (strcmp(fileSystemName, "xenix") == 0) result = 0x012FF7B4;
+    else if (strcmp(fileSystemName, "xfs") == 0) result = 0x58465342;
+    else if (strcmp(fileSystemName, "xia") == 0) result = 0x012FD16D;
+    else if (strcmp(fileSystemName, "udev") == 0) result = 0x01021994;
+    else if (strcmp(fileSystemName, "zfs") == 0) result = 0x2FC12FC1;
+
+    assert(result != 0);
+    return result;
+>>>>>>> ../runtime/src/native/libs/System.Native/pal_io.c
 }
 #endif
 #endif /* TARGET_WASI */
@@ -1760,6 +1939,9 @@ uint32_t SystemNative_FileSystemSupportsLocking(intptr_t fd, int32_t lockOperati
     }
     return 1;
 #endif
+#elif defined(TARGET_LIBNX)
+    // libnx has no fstatfs/fstatvfs; the SD card (FAT) does whatever locking it does.
+    return 1;
 #elif HAVE_STATVFS_BASETYPE
     int statfsRes;
     struct statvfs statfsArgs;

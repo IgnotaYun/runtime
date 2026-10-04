@@ -30,6 +30,11 @@ extern "C"
 #endif // HAVE_UCONTEXT_H
 
 typedef ucontext_t native_context_t;
+#elif defined(TARGET_LIBNX)
+// libnx (newlib) has no ucontext/signal support. PAL declarations still
+// reference these types at the header level even though the call sites are
+// excluded from compilation on libnx; provide an opaque native_context_t.
+typedef struct { int _placeholder; } native_context_t;
 #elif defined(TARGET_WASI)
 // WASI (wasm32-wasip2 in wasi-sdk 33) has no signal/ucontext support: <ucontext.h>
 // is absent and <signal.h> hides siginfo_t/FPE_*/ILL_* behind
@@ -77,7 +82,7 @@ bool Xstate_IsAvx512Supported();
 bool Xstate_IsApxSupported();
 #endif // XSTATE_SUPPORTED || (HOST_AMD64 && HAVE_MACH_EXCEPTIONS)
 
-#if defined(HOST_64BIT) && defined(HOST_ARM64) && !defined(TARGET_FREEBSD) && !defined(__APPLE__)
+#if defined(HOST_64BIT) && defined(HOST_ARM64) && !defined(TARGET_FREEBSD) && !defined(__APPLE__) && !defined(TARGET_LIBNX)
 #if !defined(SVE_MAGIC)
 
 // Add the missing SVE defines
@@ -803,7 +808,73 @@ const struct fpregs* GetConstNativeSigSimdContext(const native_context_t *mc)
     return GetNativeSigSimdContext(const_cast<native_context_t*>(mc));
 }
 
+#elif defined(TARGET_LIBNX) // TARGET_FREEBSD
+
+// libnx: no ucontext/kernel sigcontext. Mirror the Linux aarch64 mcontext
+// layout so MCREG_* math stays correct for contexts the VM itself creates.
+struct libnx_mcontext {
+    uint64_t regs[31];
+    uint64_t sp;
+    uint64_t pc;
+    uint64_t pstate;
+    uint8_t __reserved[4096];
+};
+
+#define MCONTEXT_FROM_NATIVE(ucontextPtr)  (*((libnx_mcontext*)(ucontextPtr)))
+
+#define MCREG_X0(mc)      ((mc).regs[0])
+#define MCREG_X1(mc)      ((mc).regs[1])
+#define MCREG_X2(mc)      ((mc).regs[2])
+#define MCREG_X3(mc)      ((mc).regs[3])
+#define MCREG_X4(mc)      ((mc).regs[4])
+#define MCREG_X5(mc)      ((mc).regs[5])
+#define MCREG_X6(mc)      ((mc).regs[6])
+#define MCREG_X7(mc)      ((mc).regs[7])
+#define MCREG_X8(mc)      ((mc).regs[8])
+#define MCREG_X9(mc)      ((mc).regs[9])
+#define MCREG_X10(mc)     ((mc).regs[10])
+#define MCREG_X11(mc)     ((mc).regs[11])
+#define MCREG_X12(mc)     ((mc).regs[12])
+#define MCREG_X13(mc)     ((mc).regs[13])
+#define MCREG_X14(mc)     ((mc).regs[14])
+#define MCREG_X15(mc)     ((mc).regs[15])
+#define MCREG_X16(mc)     ((mc).regs[16])
+#define MCREG_X17(mc)     ((mc).regs[17])
+#define MCREG_X18(mc)     ((mc).regs[18])
+#define MCREG_X19(mc)     ((mc).regs[19])
+#define MCREG_X20(mc)     ((mc).regs[20])
+#define MCREG_X21(mc)     ((mc).regs[21])
+#define MCREG_X22(mc)     ((mc).regs[22])
+#define MCREG_X23(mc)     ((mc).regs[23])
+#define MCREG_X24(mc)     ((mc).regs[24])
+#define MCREG_X25(mc)     ((mc).regs[25])
+#define MCREG_X26(mc)     ((mc).regs[26])
+#define MCREG_X27(mc)     ((mc).regs[27])
+#define MCREG_X28(mc)     ((mc).regs[28])
+#define MCREG_Fp(mc)      ((mc).regs[29])
+#define MCREG_Lr(mc)      ((mc).regs[30])
+#define MCREG_Sp(mc)      ((mc).sp)
+#define MCREG_Pc(mc)      ((mc).pc)
+#define MCREG_Cpsr(mc)    ((mc).pstate)
+
+inline
+void GetNativeSigSimdContext(native_context_t *mc, void **fp_ptr, void **sve_ptr)
+{
+    (void)mc;
+    *fp_ptr = nullptr;
+    *sve_ptr = nullptr;
+}
+
+inline
+void GetConstNativeSigSimdContext(const native_context_t *mc, void const **fp_ptr, void const **sve_ptr)
+{
+    (void)mc;
+    *fp_ptr = nullptr;
+    *sve_ptr = nullptr;
+}
+
 #elif !defined(__APPLE__) // TARGET_FREEBSD
+define LIBNX_ARM64_CONTEXT_BRANCH 1
 
 #define MCREG_X0(mc)      ((mc).regs[0])
 #define MCREG_X1(mc)      ((mc).regs[1])

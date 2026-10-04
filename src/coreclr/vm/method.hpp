@@ -21,10 +21,13 @@
 #include "typedesc.h"
 #include <stddef.h>
 #include "eeconfig.h"
-#include "precode.h"
 #ifdef FEATURE_INTERPRETER
+// NOTE: callstubgenerator.h -> callingconvention.h -> cgencpu.h defines
+// HAS_PINVOKE_IMPORT_PRECODE on arm64; it must be included before precode.h
+// so precode.h and the PInvokeImportThunkGlue typedef below agree on it.
 #include "callstubgenerator.h"
 #endif // FEATURE_INTERPRETER
+#include "precode.h"
 class Stub;
 class FCallMethodDesc;
 class FieldDesc;
@@ -264,11 +267,11 @@ enum MethodDescFlags
 
 // Used for storing additional items related to native code
 #ifdef FEATURE_INTERPRETER
-#ifdef FEATURE_PORTABLE_ENTRYPOINTS
+#if defined(FEATURE_PORTABLE_ENTRYPOINTS) && defined(TARGET_WASM)
 typedef void(*InterpreterCalliCookie)(PCODE, int8_t*, int8_t*);
 #else
 typedef CallStubHeader* InterpreterCalliCookie;
-#endif // FEATURE_PORTABLE_ENTRYPOINTS
+#endif // FEATURE_PORTABLE_ENTRYPOINTS && TARGET_WASM
 #endif // FEATURE_INTERPRETER
 
 struct MethodDescCodeData final

@@ -32,6 +32,8 @@ inline uint32_t minipal_getpagesize(void)
     // The page size on Windows is 4KB and is not going to change.
     return 4 * 1024;
 }
+#elif defined(HOST_LIBNX)
+uint32_t minipal_getpagesize(void);
 #else
 uint32_t minipal_getpagesize(void);
 #endif

@@ -9,6 +9,11 @@
 #ifndef __PRECODE_H__
 #define __PRECODE_H__
 
+// The HAS_*_PRECODE feature macros live in the arch-specific cgencpu.h.
+// Include it here so that precode.h content does not depend on the order in
+// which translation units happen to include cgencpu.h and precode.h.
+#include "cgensys.h"
+
 #ifdef FEATURE_PORTABLE_ENTRYPOINTS
 
 #include "precode_portable.hpp"

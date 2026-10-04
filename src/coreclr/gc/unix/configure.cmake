@@ -188,4 +188,25 @@ int main(void) {
   exit(0);
 }" HAVE_PROCFS_STATM)
 
+if(CLR_CMAKE_TARGET_LIBNX)
+    # No /proc, no sysctl, no rlimit on Horizon; see pal/src/configure.cmake
+    set(HAVE_SYSCTL 0)
+    set(HAVE_SYSCONF 0)
+    set(HAVE__SC_AVPHYS_PAGES 0)
+    set(HAVE__SC_PHYS_PAGES 0)
+    set(HAVE__SC_NPROCESSORS_CONF 0)
+    set(HAVE__SC_NPROCESSORS_ONLN 0)
+    set(HAVE_PROCFS_STAT 0)
+    set(HAVE_PROCFS_STATM 0)
+    set(HAVE_PROCFS_MAPS 0)
+    set(HAVE_PROCFS_STATUS 0)
+    set(HAVE_SCHED_GETCPU 0)
+    set(HAVE_GNU_GETAFFINITY_NP 0)
+    set(HAVE_SCHED_GETAFFINITY 0)
+    set(HAVE_SCHED_SETAFFINITY 0)
+    set(HAVE_PTHREAD_GETAFFINITY_NP 0)
+    set(HAVE_PTHREAD_SETAFFINITY_NP 0)
+    set(HAVE_SWAPCTL 0)
+endif()
+
 configure_file(${CMAKE_CURRENT_LIST_DIR}/config.gc.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.gc.h)

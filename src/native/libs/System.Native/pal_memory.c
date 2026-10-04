@@ -17,6 +17,11 @@
 #elif HAVE_MALLOC_USABLE_SIZE_NP
     #include <malloc_np.h>
     #define MALLOC_SIZE(s) malloc_usable_size(s)
+#elif defined(TARGET_SUNOS) || defined(TARGET_LIBNX)
+    #define MALLOC_SIZE(s) (*((size_t*)(s)-1))
+#else
+    #error "Platform doesn't support malloc_usable_size or malloc_size"
+
 #endif
 
 // These functions look like simple wrappers around the standard C library functions, but they are actually

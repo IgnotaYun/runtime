@@ -36,8 +36,10 @@ ASMCONSTANTS_C_ASSERT(FRAMETYPE_InlinedCallFrame == (int)FrameIdentifier::Inline
 #define DynamicHelperFrameFlags_ObjectArg   1
 #define DynamicHelperFrameFlags_ObjectArg2  2
 
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 #define ThisPtrRetBufPrecodeData__Target      0x00
 ASMCONSTANTS_C_ASSERT(ThisPtrRetBufPrecodeData__Target == offsetof(ThisPtrRetBufPrecodeData, Target));
+#endif // !FEATURE_PORTABLE_ENTRYPOINTS
 
 #define               Thread__m_fPreemptiveGCDisabled   0x04
 #define               Thread__m_pFrame                  0x08
@@ -196,18 +198,12 @@ ASMCONSTANTS_C_ASSERT(CONTEXT_Pc == offsetof(T_CONTEXT,Pc))
 ASMCONSTANTS_C_ASSERT(SIZEOF__FaultingExceptionFrame        == sizeof(FaultingExceptionFrame));
 ASMCONSTANTS_C_ASSERT(FaultingExceptionFrame__m_fFilterExecuted == offsetof(FaultingExceptionFrame, m_fFilterExecuted));
 
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 #define SIZEOF__FixupPrecode                 24
-//#define Offset_PrecodeChunkIndex             15
-//#define Offset_MethodDescChunkIndex          14
-#define MethodDesc_ALIGNMENT_SHIFT           3
-//#define FixupPrecode_ALIGNMENT_SHIFT_1       3
-//#define FixupPrecode_ALIGNMENT_SHIFT_2       4
-
 ASMCONSTANTS_C_ASSERT(SIZEOF__FixupPrecode == sizeof(FixupPrecode));
-//ASMCONSTANTS_C_ASSERT(Offset_PrecodeChunkIndex == offsetof(FixupPrecode, m_PrecodeChunkIndex));
-//ASMCONSTANTS_C_ASSERT(Offset_MethodDescChunkIndex == offsetof(FixupPrecode, m_MethodDescChunkIndex));
+#endif // !FEATURE_PORTABLE_ENTRYPOINTS
+#define MethodDesc_ALIGNMENT_SHIFT           3
 ASMCONSTANTS_C_ASSERT(MethodDesc_ALIGNMENT_SHIFT == MethodDesc::ALIGNMENT_SHIFT);
-//ASMCONSTANTS_C_ASSERT((1<<FixupPrecode_ALIGNMENT_SHIFT_1) + (1<<FixupPrecode_ALIGNMENT_SHIFT_2)  == sizeof(FixupPrecode));
 
 #ifdef FEATURE_VIRTUAL_STUB_DISPATCH
 #define ResolveCacheElem__target      0x10
@@ -247,6 +243,7 @@ ASMCONSTANTS_C_ASSERT(InlinedCallFrame__m_pCalleeSavedFP == offsetof(InlinedCall
 #define               InlinedCallFrame__m_pThread 0x30
 ASMCONSTANTS_C_ASSERT(InlinedCallFrame__m_pThread == offsetof(InlinedCallFrame, m_pThread))
 
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
 #define FixupPrecodeData__Target 0x00
 ASMCONSTANTS_C_ASSERT(FixupPrecodeData__Target            == offsetof(FixupPrecodeData, Target))
 
@@ -261,6 +258,7 @@ ASMCONSTANTS_C_ASSERT(StubPrecodeData__Target            == offsetof(StubPrecode
 
 #define StubPrecodeData__SecretParam 0x00
 ASMCONSTANTS_C_ASSERT(StubPrecodeData__SecretParam        == offsetof(StubPrecodeData, SecretParam))
+#endif // !FEATURE_PORTABLE_ENTRYPOINTS
 
 #ifdef FEATURE_TIERED_COMPILATION
 #define CallCountingStubData__RemainingCallCountCell 0x00

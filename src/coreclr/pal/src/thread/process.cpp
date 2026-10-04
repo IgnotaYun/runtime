@@ -2017,6 +2017,11 @@ PROCCreateCrashDumpIfEnabled(int signal, siginfo_t* siginfo, void* context, Cras
                 argv[argc++] = crashThreadArg;
             }
 
+#ifdef TARGET_LIBNX
+            // newlib's siginfo_t lacks si_code/si_errno/si_addr, and libnx has no
+            // signal delivery anyway; omit signal details from crash dumps.
+            (void)siginfo;
+#else
             if (siginfo != nullptr)
             {
                 signalCodeArg = PROCFormatInt(siginfo->si_code);
@@ -2038,6 +2043,7 @@ PROCCreateCrashDumpIfEnabled(int signal, siginfo_t* siginfo, void* context, Cras
                     argv[argc++] = signalAddressArg;
                 }
             }
+#endif // TARGET_LIBNX
         }
 
         argv[argc] = nullptr;

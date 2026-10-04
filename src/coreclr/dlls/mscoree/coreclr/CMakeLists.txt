@@ -41,7 +41,13 @@ endif (CLR_CMAKE_HOST_WIN32)
 
 add_definitions(-DFX_VER_INTERNALNAME_STR=CoreCLR.dll)
 
-if (NOT CLR_CMAKE_HOST_ARCH_WASM)
+if (CLR_CMAKE_TARGET_LIBNX)
+    # Statically linked into the homebrew NRO; no shared libraries on libnx.
+    add_library_clr(coreclr
+        STATIC
+        ${CLR_SOURCES}
+    )
+elseif (NOT CLR_CMAKE_HOST_ARCH_WASM)
     add_library_clr(coreclr
         SHARED
         ${CLR_SOURCES}
@@ -57,11 +63,11 @@ if (NOT CLR_CMAKE_HOST_ARCH_WASM)
     set_property(TARGET coreclr APPEND_STRING PROPERTY LINK_DEPENDS ${EXPORTS_FILE})
     set(LIB_CORDBEE cordbee_wks)
     set(LIB_INTEROP interop)
-endif(NOT CLR_CMAKE_HOST_ARCH_WASM)
+endif()
 
-if (CLR_CMAKE_HOST_UNIX AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if (CLR_CMAKE_HOST_UNIX AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
     set(LIB_UNWINDER unwinder_wks)
-endif (CLR_CMAKE_HOST_UNIX AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+endif ()
 
 if (CLR_CMAKE_HOST_WIN32 AND CLR_CMAKE_TARGET_ARCH_ARM64)
     set(LIB_UNWINDER unwinder_wks)

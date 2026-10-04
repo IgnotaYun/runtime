@@ -1433,6 +1433,11 @@ PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig
     pEntryPoint = pMD->GetTemporaryEntryPoint();
     PortableEntryPoint::SetActualCode(pEntryPoint, actualEntryPoint);
     m_pCompositeInfo->SetMethodDescForEntryPointInNativeImage(virtualEntrypointIP, pMD);
+#elif defined(TARGET_LIBNX)
+    // libnx runs IL-only (interpreter); R2R images are never loaded. Keep the
+    // entry point unset so any accidental R2R usage falls back to the
+    // prestub/interpreter instead of a wrong native address.
+    pEntryPoint = pMD->GetTemporaryEntryPoint();
 #else
 #error "ReadyToRun and PortableEntryPoints are not currently compatible on non-WASM targets, as the R2R image layout would need to be changed to support this scenario."
 #endif

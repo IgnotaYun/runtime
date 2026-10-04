@@ -24,6 +24,13 @@ SET_DEFAULT_DEBUG_CHANNEL(PAL); // some headers have code with asserts, so do th
 #include "../objmgr/listedobjectmanager.hpp"
 #include "pal/seh.hpp"
 #include "pal/palinternal.h"
+
+#ifdef TARGET_LIBNX
+// newlib does not define PTHREAD_STACK_MIN
+#ifndef PTHREAD_STACK_MIN
+#define PTHREAD_STACK_MIN 0x1000
+#endif
+#endif // TARGET_LIBNX
 #include "pal/process.h"
 #include "../thread/procprivate.hpp"
 #include "pal/module.h"

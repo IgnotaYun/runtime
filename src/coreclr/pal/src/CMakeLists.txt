@@ -10,6 +10,12 @@ elseif (CLR_CMAKE_TARGET_FREEBSD OR CLR_CMAKE_TARGET_OPENBSD)
   include_directories(SYSTEM $ENV{ROOTFS_DIR}/usr/local/include)
 endif()
 
+if(CLR_CMAKE_TARGET_LIBNX)
+  # libnx: no libunwind at all (no ucontext); PAL_VirtualUnwind is stubbed in
+  # arch/arm64/libnxstubs.cpp.
+  set(CLR_CMAKE_USE_SYSTEM_LIBUNWIND 1) # pretends "handled elsewhere"
+endif()
+
 if(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_HOST_ARCH_WASM)
   include_directories(${CLR_SRC_NATIVE_DIR}/external/libunwind/include)
   include_directories(${CLR_SRC_NATIVE_DIR}/external/libunwind/include/tdep)
@@ -17,7 +23,7 @@ if(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_HOST_ARCH_WASM)
   include_directories(${CLR_ARTIFACTS_OBJ_DIR}/external/libunwind/include/tdep)
 
   add_subdirectory(${CLR_SRC_NATIVE_DIR}/external/libunwind_extras ${CLR_ARTIFACTS_OBJ_DIR}/external/libunwind)
-elseif(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_HOST_ARCH_WASM)
+elseif(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
   find_unwind_libs(UNWIND_LIBS)
 elseif(CLR_CMAKE_TARGET_APPLE)
   add_subdirectory(${CLR_SRC_NATIVE_DIR}/external/libunwind_extras ${CLR_ARTIFACTS_OBJ_DIR}/external/libunwind)
@@ -130,12 +136,23 @@ if (CLR_CMAKE_HOST_ARCH_WASM)
   )
 endif()
 
-if(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_HOST_ARCH_WASM)
+if(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
   list(APPEND PLATFORM_SOURCES
     arch/${PAL_ARCH_SOURCES_DIR}/callsignalhandlerwrapper.S
     arch/${PAL_ARCH_SOURCES_DIR}/signalhandlerhelper.cpp
   )
-endif(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_HOST_ARCH_WASM)
+endif(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
+
+if (CLR_CMAKE_TARGET_LIBNX)
+  # No POSIX signals, no dlfcn/libunwind on libnx: WASI-style stubs.
+  list(APPEND PLATFORM_SOURCES
+    arch/${PAL_ARCH_SOURCES_DIR}/libnxstubs.cpp
+    libnx/nx_mmap.c
+    libnx/nx_dlfcn.c
+  )
+  # Shim headers: sys/mman.h, dlfcn.h
+  include_directories(BEFORE libnx/include)
+endif()
 
 if(CLR_CMAKE_HOST_ARCH_ARM)
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -206,7 +223,7 @@ set(SOURCES
   thread/threadsusp.cpp
 )
 
-if (NOT CLR_CMAKE_TARGET_WASI)
+if (NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_LIBNX)
   list(APPEND SOURCES
     debug/debug.cpp
     exception/signal.cpp
@@ -220,9 +237,9 @@ set_source_files_properties(
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/../inc/rt
 )
 
-if(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_HOST_ARCH_WASM)
+if(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
   set(LIBUNWIND_OBJECTS $<TARGET_OBJECTS:libunwind>)
-endif(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_HOST_ARCH_WASM)
+endif(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
 
 add_library(coreclrpal_objects
   OBJECT

@@ -56,12 +56,17 @@ extern "C" void* PacStripPtr(void* ptr);
 #define JUMP_ALLOCATE_SIZE                      16  // # bytes to allocate for a jump instruction
 #define BACK_TO_BACK_JUMP_ALLOCATE_SIZE         16  // # bytes to allocate for a back to back jump instruction
 
+#ifndef FEATURE_PORTABLE_ENTRYPOINTS
+// With portable entrypoints precode.h does not define the arch precode
+// structs, so these must stay undefined or method.hpp et al. reference
+// nonexistent types.
 #define HAS_PINVOKE_IMPORT_PRECODE              1
 
 #define HAS_FIXUP_PRECODE                       1
 
 // ThisPtrRetBufPrecode one is necessary for closed delegates over static methods with return buffer
 #define HAS_THISPTR_RETBUF_PRECODE              1
+#endif // !FEATURE_PORTABLE_ENTRYPOINTS
 
 #define CODE_SIZE_ALIGN                         8
 #define CACHE_LINE_SIZE                         64

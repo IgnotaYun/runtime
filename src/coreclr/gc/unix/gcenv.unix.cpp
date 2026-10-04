@@ -27,6 +27,10 @@
 #include <minipal/time.h>
 #include <minipal/cpucount.h>
 
+#ifdef TARGET_LIBNX
+#include <switch.h>
+#endif
+
 #if HAVE_SWAPCTL
 #include <sys/swap.h>
 #endif
@@ -93,7 +97,11 @@ typedef cpuset_t cpu_set_t;
 #include "cgroup.h"
 
 #ifndef __APPLE__
-#if HAVE_SYSCONF && HAVE__SC_AVPHYS_PAGES
+#if defined(TARGET_LIBNX)
+// Horizon has a fixed 4KB page size and 4GB of RAM usable by applications
+// (model-dependent). sysconf in newlib is not usable here.
+#define SYSCONF_PAGES 0
+#elif HAVE_SYSCONF && HAVE__SC_AVPHYS_PAGES
 #define SYSCONF_PAGES _SC_AVPHYS_PAGES
 #elif HAVE_SYSCONF && HAVE__SC_PHYS_PAGES
 #define SYSCONF_PAGES _SC_PHYS_PAGES
@@ -269,6 +277,12 @@ bool GCToOSInterface::Initialize()
     {
         return false;
     }
+#elif defined(TARGET_LIBNX)
+    // svcGetInfo(InfoType_TotalMemorySize) reports the console DRAM size.
+    uint64_t totalMemory = 0;
+    if (R_FAILED(svcGetInfo(&totalMemory, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0)) || totalMemory == 0)
+        totalMemory = (uint64_t)4 * 1024 * 1024 * 1024;
+    g_totalPhysicalMemSize = totalMemory;
 #else // HAVE_SYSCTL
 #error "Don't know how to get total physical memory on this platform"
 #endif // HAVE_SYSCTL
@@ -617,6 +631,10 @@ bool GCToOSInterface::GetWriteWatch(bool resetState, void* address, size_t size,
 
 bool ReadMemoryValueFromFile(const char* filename, uint64_t* val)
 {
+#ifdef TARGET_LIBNX
+    // No cgroup/procfs files on Horizon
+    return false;
+#else
     bool result = false;
     char* line = nullptr;
     size_t lineLen = 0;
@@ -661,6 +679,7 @@ done:
         fclose(file);
     free(line);
     return result;
+#endif // TARGET_LIBNX
 }
 
 static void GetLogicalProcessorCacheSizeFromSysConf(size_t* cacheLevel, size_t* cacheSize)
@@ -831,7 +850,7 @@ static uint64_t GetMemorySizeMultiplier(char units)
     return 1;
 }
 
-#if !defined(__APPLE__) && !defined(__HAIKU__)
+#if !defined(__APPLE__) && !defined(__HAIKU__) && !defined(TARGET_LIBNX)
 // Try to read the MemAvailable entry from /proc/meminfo.
 // Return true if the /proc/meminfo existed, the entry was present and we were able to parse it.
 static bool ReadMemAvailable(uint64_t* memAvailable)
@@ -1109,6 +1128,17 @@ uint64_t GetAvailablePhysicalMemory()
     if (get_system_info(&info) == B_OK)
     {
         available = info.free_memory;
+    }
+#elif defined(TARGET_LIBNX)
+    uint64_t usedMemory = 0;
+    if (R_SUCCEEDED(svcGetInfo(&usedMemory, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0)) &&
+        usedMemory < g_totalPhysicalMemSize)
+    {
+        available = g_totalPhysicalMemSize - usedMemory;
+    }
+    else
+    {
+        available = g_totalPhysicalMemSize / 2;
     }
 #else // Linux
     static volatile bool tryReadMemInfo = true;

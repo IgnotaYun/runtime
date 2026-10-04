@@ -34,6 +34,8 @@ Revision History:
 // <unistd.h> already included above
 #elif HAVE_SYSCTL
 #include <sys/sysctl.h>
+#elif defined(TARGET_LIBNX)
+// libnx: hardcoded answers below; no sysctl/sysconf.
 #else
 #error Either sysctl or sysconf is required for GetSystemInfo.
 #endif
@@ -99,6 +101,8 @@ SET_DEFAULT_DEBUG_CHANNEL(MISC);
 #define SYSCONF_PAGES _SC_AVPHYS_PAGES
 #elif HAVE_SYSCONF && HAVE__SC_PHYS_PAGES
 #define SYSCONF_PAGES _SC_PHYS_PAGES
+#elif defined(TARGET_LIBNX)
+// libnx: page size is a constant (Horizon pages are 4KB); handled below.
 #else
 #error Dont know how to get page-size on this architecture!
 #endif
@@ -134,6 +138,10 @@ PAL_GetTotalCpuCount()
     {
         ASSERT("sysctl failed for HW_NCPU (%d)\n", errno);
     }
+#elif defined(TARGET_LIBNX)
+    // On HOS only 3 cores are available to applications; core 3 is reserved
+    // for the OS and using it risks freezing the system.
+    nrcpus = 3;
 #else // HAVE_SYSCONF
 #error "Don't know how to get total CPU count on this platform"
 #endif // HAVE_SYSCONF
@@ -272,6 +280,9 @@ GetSystemInfo(
 #elif defined(HOST_64BIT)
 #if defined(USRSTACK64)
     lpSystemInfo->lpMaximumApplicationAddress = (PVOID) USRSTACK64;
+#elif defined(TARGET_LIBNX)
+    // Horizon userland address space is 39-bit.
+    lpSystemInfo->lpMaximumApplicationAddress = (PVOID) 0x8000000000ul;
 #else // !USRSTACK64
 #error How come USRSTACK64 is not defined for 64bit?
 #endif // USRSTACK64

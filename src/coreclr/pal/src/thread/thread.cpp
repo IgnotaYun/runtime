@@ -48,6 +48,18 @@ SET_DEFAULT_DEBUG_CHANNEL(THREAD); // some headers have code with asserts, so do
 
 #include <signal.h>
 #include <pthread.h>
+
+#ifdef TARGET_LIBNX
+// newlib does not define PTHREAD_STACK_MIN
+#ifndef PTHREAD_STACK_MIN
+#define PTHREAD_STACK_MIN 0x1000
+#endif
+#include <switch.h>
+// newlib does not declare the schedparam APIs; the PAL stubs them (libnxstubs.cpp).
+extern "C" int pthread_setschedparam(pthread_t thread, int policy, const struct sched_param *param);
+extern "C" int pthread_getschedparam(pthread_t thread, int *policy, struct sched_param *param);
+#endif // TARGET_LIBNX
+
 #if HAVE_PTHREAD_NP_H
 #include <pthread_np.h>
 #endif
@@ -2361,6 +2373,18 @@ CPalThread::GetStackBase()
     pthread_attr_destroy(&attr);
     constexpr size_t s_wasiStackSize = 8 * 1024 * 1024;
     stackBase = (void*)s_wasiStackSize;
+#elif defined(TARGET_LIBNX)
+    // libnx: no pthread_attr_get_np; the libnx Thread struct exposes the stack.
+    {
+        Thread* nxThread = threadGetSelf();
+        _ASSERTE(nxThread != NULL);
+        // stack_mem is the lowest address; the stack grows down, so the base
+        // (highest address) is stack_mem + stack_sz.
+        stackAddr = (char*)nxThread->stack_mem + nxThread->stack_sz;
+        stackSize = nxThread->stack_sz;
+    }
+    (void)thread; (void)status;
+    pthread_attr_destroy(&attr);
 #elif !defined(TARGET_BROWSER)
 #if HAVE_PTHREAD_ATTR_GET_NP
     status = pthread_attr_get_np(thread, &attr);
@@ -2419,6 +2443,16 @@ CPalThread::GetStackLimit()
     (void)thread; (void)stackSize; (void)status;
     pthread_attr_destroy(&attr);
     stackLimit = (void*)4096;
+#elif defined(TARGET_LIBNX)
+    // libnx Thread struct exposes the stack: limit is the lowest address
+    // (stack grows down from stack_mem + stack_sz).
+    {
+        Thread* nxThread = threadGetSelf();
+        _ASSERTE(nxThread != NULL);
+        stackLimit = nxThread->stack_mem;
+        (void)thread; (void)stackSize; (void)status;
+    }
+    pthread_attr_destroy(&attr);
 #elif !defined(TARGET_BROWSER)
 #if HAVE_PTHREAD_ATTR_GET_NP
     status = pthread_attr_get_np(thread, &attr);

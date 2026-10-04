@@ -78,7 +78,7 @@ inline static int ToFileDescriptorUnchecked(intptr_t fd)
 */
 inline static int ToFileDescriptor(intptr_t fd)
 {
-#ifndef TARGET_WASI // the valid range of file descriptors is probably INT32_MIN <= fd && fd <= INT32_MAX, the negative handles are valid for console.
+#if !defined(TARGET_WASI) && !defined(TARGET_LIBNX) // libnx: no sysconf(_SC_OPEN_MAX)
     assert(0 <= fd);
 #endif
     assert(fd <= INT_MAX);

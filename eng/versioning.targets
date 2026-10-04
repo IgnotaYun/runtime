@@ -69,6 +69,7 @@
     <SupportedPlatform Include="iOS" />
     <SupportedPlatform Include="tvOS" />
     <SupportedPlatform Include="macCatalyst" />
+    <SupportedPlatform Include="libnx" />
   </ItemGroup>
 
   <!-- Enables browser warnings for cross platform or Browser targeted builds -->

@@ -1,9 +1,14 @@
 set(SOURCES
-    doublemapping.cpp
     dn-u16.cpp
     dn-stdio.cpp
     memory.cpp
 )
+
+if (CLR_CMAKE_TARGET_LIBNX)
+  list(APPEND SOURCES doublemapping-libnx.cpp)
+else()
+  list(APPEND SOURCES doublemapping.cpp)
+endif()
 
 add_library(coreclrminipal_objects
     OBJECT
