@@ -153,7 +153,10 @@ extern "C" void LibnxDebugBreakImpl(void* caller, void* fp)
     int i = 0;
     _Unwind_Backtrace(LibnxBtCb, &i);
     svcOutputDebugString("\n", 1);
-    __builtin_trap();
+    // Do not trap: the guest BRK re-enters the PAL signal path and recurses
+    // DebugBreak until the stack is gone. Exit the process instead.
+    svcExitProcess();
+    for (;;) { }
 }
 
 // Naked entry so x30 (true caller) and x29 are sampled before any prologue.
@@ -174,7 +177,6 @@ OutputDebugStringA(IN LPCSTR lpOutputString)
     if (lpOutputString)
     {
         svcOutputDebugString(lpOutputString, strlen(lpOutputString));
-        fputs(lpOutputString, stderr);
     }
 }
 
@@ -187,7 +189,6 @@ OutputDebugStringW(IN LPCWSTR lpOutputString)
     if (n > 0)
     {
         svcOutputDebugString(buf, n - 1);
-        fputs(buf, stderr);
     }
 }
 
@@ -503,7 +504,17 @@ extern "C" ssize_t write(int fd, const void* buf, size_t n)
         // Console output is visible under emulators/debuggers.
         if ((fd == 1 || fd == 2) && buf && n > 0)
             svcOutputDebugString((const char*)buf, n);
-        return _write_r(_REENT, fd, buf, n);
+        // After consoleInit, fd 1 routes to libnx's con_write, whose cursor
+        // state and framebuffer drawing are not thread-safe. Managed Console
+        // output and runtime logging (minipal_log_write) both land here on
+        // different threads, and the race makes consoleDrawChar write outside
+        // the framebuffer allocation, corrupting the newlib heap. Serialize
+        // stdio writes.
+        static pthread_mutex_t s_stdioWriteLock = PTHREAD_MUTEX_INITIALIZER;
+        pthread_mutex_lock(&s_stdioWriteLock);
+        ssize_t ret = _write_r(_REENT, fd, buf, n);
+        pthread_mutex_unlock(&s_stdioWriteLock);
+        return ret;
     }
 
     NxPipe* p = nx_pipe_for(fd);
