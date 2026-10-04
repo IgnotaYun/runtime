@@ -4,6 +4,10 @@
 // STACKWALK.CPP
 
 #include "common.h"
+
+#ifdef TARGET_LIBNX
+extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
+#endif
 #include "frames.h"
 #include "threads.h"
 #include "stackwalk.h"
@@ -2343,9 +2347,15 @@ StackWalkAction StackFrameIterator::NextRaw(void)
             }
 #endif // TARGET_WASM
 
+#ifdef TARGET_LIBNX
+            { libnx_pal_log_stack("nextraw retaddr", (void*)adr, 0); }
+#endif
             if (adr)
             {
                 ProcessIp(adr);
+#ifdef TARGET_LIBNX
+                { libnx_pal_log_stack("nextraw processip done", (void*)adr, m_crawl.isFrameless ? 1 : 0); }
+#endif
 
                 _ASSERTE(m_crawl.GetCodeInfo()->IsValid() || !pInlinedFrame);
 

@@ -27,4 +27,11 @@
     <type fullname="System.Diagnostics.Tracing.NativeRuntimeEventSource" />
   </assembly>
 
+  <!-- Accessed by the runtime binder only (NEWOBJ_HELPER_DUMMY); never referenced from C#. -->
+  <assembly fullname="System.Private.CoreLib">
+    <type fullname="System.Runtime.CompilerServices.RuntimeHelpers">
+      <method name="NewobjHelperDummy" />
+    </type>
+  </assembly>
+
 </linker>

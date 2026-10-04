@@ -1035,6 +1035,12 @@ static size_t GetCurrentVirtualMemorySize()
 //  non zero if it has succeeded, GetVirtualMemoryMaxAddress() if not available
 size_t GCToOSInterface::GetVirtualMemoryLimit()
 {
+#ifdef TARGET_LIBNX
+    // libnx fake mmap allocates from the real heap split (reserve == commit),
+    // so "virtual" memory is limited to physical memory. Give the GC regions
+    // logic a sane cap: total RAM / 2.
+    return (size_t)g_totalPhysicalMemSize / 2;
+#endif
 #ifdef RLIMIT_AS
     rlimit addressSpaceLimit;
     if ((getrlimit(RLIMIT_AS, &addressSpaceLimit) == 0) && (addressSpaceLimit.rlim_cur != RLIM_INFINITY))

@@ -9,6 +9,12 @@
 #include "threads.h"
 #include "gcenv.h"
 #include "interpexec.h"
+
+#ifdef TARGET_LIBNX
+extern "C" void libnx_interp_log(const char* name);
+extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
+extern "C" void svcOutputDebugString(const char*, size_t);
+#endif
 #include "frames.h"
 #include "virtualcallstub.h"
 #include "comdelegate.h"
@@ -367,6 +373,21 @@ static CallStubHeader *UpdateCallStubForMethod(MethodDesc *pMD, PCODE target)
 
     if (target != (PCODE)NULL)
     {
+#ifdef TARGET_LIBNX
+        // On portable-entrypoint platforms GetMultiCallableAddrOfCode returns the
+        // PortableEntryPoint struct address, which is data, not code. Resolve to
+        // the actual native entrypoint; on wasm the "call" goes through a wasm
+        // thunk that interprets the PEP, but on libnx the call stub really jumps.
+        if (PortableEntryPoint::HasNativeEntryPoint(target))
+        {
+            target = (PCODE)PortableEntryPoint::GetActualCode(target);
+        }
+        else
+        {
+            _ASSERTE(!"InvokeManagedMethod target has no native code");
+            EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
+        }
+#endif
         header->SetTarget(target);
     }
 
@@ -432,6 +453,9 @@ static NOINLINE CallStubHeader *InvokeManagedMethodHelper(MethodDesc *pMD, PCODE
 
 void InvokeManagedMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet, PCODE target, Object** pContinuationRet)
 {
+#ifdef TARGET_LIBNX
+    libnx_pal_log_stack("invokemgd", (void*)pMD, (size_t)target);
+#endif
     CONTRACTL
     {
         THROWS;
@@ -557,6 +581,16 @@ void InvokeUnmanagedCalli(PCODE ftn, InterpreterCalliCookie cookie, int8_t *pArg
 
 void InvokeCalliStub(PCODE ftn, InterpreterCalliCookie cookie, int8_t *pArgs, int8_t *pRet, Object** pContinuationRet)
 {
+#ifdef TARGET_LIBNX
+    // ftn may be a PortableEntryPoint struct address (data, not code); the
+    // caller passes it through verbatim. Our call stubs really jump to the
+    // target, so resolve to the actual native entrypoint here.
+    if (PortableEntryPoint::HasNativeEntryPoint(ftn))
+    {
+        ftn = (PCODE)PortableEntryPoint::GetActualCode(ftn);
+    }
+    libnx_pal_log_stack("callistub", (void*)ftn, (size_t)cookie);
+#endif
     CONTRACTL
     {
         THROWS;
@@ -756,6 +790,9 @@ typedef void (*HELPER_FTN_V_PP)(void*, void*);
 InterpThreadContext::InterpThreadContext()
 {
     pStackStart = pStackPointer = (int8_t*)VMToOSInterface::AlignedAllocate(INTERP_STACK_SIZE, INTERP_STACK_SIZE);
+#ifdef TARGET_LIBNX
+    { libnx_pal_log_stack("interpstack", pStackStart, (size_t)INTERP_STACK_SIZE); }
+#endif
     pStackEnd = pStackStart + INTERP_STACK_SIZE;
 #ifdef DEBUGGING_SUPPORTED
     m_bypassAddress = NULL;
@@ -874,6 +911,25 @@ static void InterpBreakpoint(const int32_t *ip, const InterpMethodContextFrame *
 NOINLINE static void InterpThrow(InterpMethodContextFrame* pFrame, const int32_t* ip, RuntimeExceptionKind exType)
 {
     pFrame->ip = ip;
+#ifdef TARGET_LIBNX
+    if (pFrame->startIp != nullptr)
+    {
+        {
+            const int32_t* codeStart = pFrame->startIp->GetByteCodes();
+            char obuf[128];
+            int on = snprintf(obuf, sizeof(obuf), "  interpthrow: ipofs=%td op=%d", (ptrdiff_t)(ip - codeStart), (int)(ip != nullptr ? ip[0] : -1));
+            svcOutputDebugString(obuf, on);
+        }
+        MethodDesc* pMD = pFrame->startIp->Method->methodHnd;
+        if (pMD != nullptr)
+        {
+            char mbuf[256];
+            int mn = snprintf(mbuf, sizeof(mbuf), "  interpthrow method: %s::%s (md=%p)",
+                pMD->GetMethodTable()->GetDebugClassName(), pMD->GetName(), (void*)pMD);
+            svcOutputDebugString(mbuf, mn);
+        }
+    }
+#endif
     COMPlusThrow(exType);
 }
 
@@ -1410,8 +1466,18 @@ static InterpByteCodeStart* PrepareInterpreterCode(MethodDesc* targetMethod, Int
     return targetIp;
 }
 
+
 void InterpExecMethod(InterpreterFrame *pInterpreterFrame, InterpMethodContextFrame *pFrame, InterpThreadContext *pThreadContext, ExceptionClauseArgs *pExceptionClauseArgs)
 {
+#ifdef TARGET_LIBNX
+    {
+        // Debug-only pointer dump; GetName() touches metadata, do it guarded.
+        void* sip = (void*)(TADDR)pFrame->startIp;
+        void* mdp = sip ? (void*)(TADDR)pFrame->startIp->Method : NULL;
+        libnx_pal_log_stack("interpframe", sip, (size_t)mdp);
+
+    }
+#endif
     CONTRACTL
     {
         GC_TRIGGERS;

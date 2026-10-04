@@ -12,6 +12,10 @@
 
 
 #include "common.h"
+
+#ifdef TARGET_LIBNX
+extern "C" void LibnxStartupLog(const char*);
+#endif
 #include "vars.hpp"
 #include "eeconfig.h"
 #include "dllimport.h"
@@ -2088,8 +2092,14 @@ extern "C" void* STDCALL ExecuteInterpretedMethod(TransitionBlock* pTransitionBl
         frames.interpMethodContextFrame.pStack = sp;
         frames.interpMethodContextFrame.pRetVal = (retBuff != NULL) ? (int8_t*)retBuff : sp;
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("EIM: before InterpExecMethod");
+#endif
         INSTALL_RESUME_AFTER_CATCH_HANDLER_WITH_FRAME(&frames.interpreterFrame);
         InterpExecMethod(&frames.interpreterFrame, &frames.interpMethodContextFrame, threadContext);
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("EIM: after InterpExecMethod");
+#endif
         UNINSTALL_RESUME_AFTER_CATCH_HANDLER_WITH_FRAME;
 
         ArgumentRegisters *pArgumentRegisters = (ArgumentRegisters*)(((uint8_t*)pTransitionBlock) + TransitionBlock::GetOffsetOfArgumentRegisters());
@@ -2286,17 +2296,26 @@ void ExecuteInterpretedMethodWithArgs_PortableEntryPoint(PCODE portableEntrypoin
 extern "C" void ExecuteInterpretedMethodFromUnmanaged(MethodDesc* pMD, int8_t* args, size_t argSize, int8_t* ret, PCODE callerIp)
 {
     _ASSERTE(pMD != NULL);
+#ifdef TARGET_LIBNX
+    { LibnxStartupLog("EIMFU: enter"); }
+#endif
 
     // This path assumes the caller is unmanaged code. This assumption is important for
     // because the DoPrestub call may trigger a GC. If a GC occurs, there would be no explicit
     // protection for the arguments, but since this from an unmanaged caller, no protection is needed.
 
     InterpByteCodeStart* targetIp = pMD->GetInterpreterCode();
+#ifdef TARGET_LIBNX
+    { LibnxStartupLog(targetIp == NULL ? "EIMFU: prestub" : "EIMFU: have bytecode"); }
+#endif
     if (targetIp == NULL)
     {
         (void)pMD->DoPrestub(NULL /* MethodTable */, CallerGCMode::Preemptive);
         targetIp = pMD->GetInterpreterCode();
     }
+#ifdef TARGET_LIBNX
+    { LibnxStartupLog(targetIp == NULL ? "EIMFU: STILL no bytecode" : "EIMFU: bytecode ready"); }
+#endif
     // The g_ReverseThunks reverse thunk is only used for UnmanagedCallersOnly methods that are executed
     // by the interpreter. Methods compiled to native (R2R) code are dispatched directly to their R2R
     // entrypoint by GetUnmanagedCallersOnlyThunk and never reach this path, so the interpreter byte code

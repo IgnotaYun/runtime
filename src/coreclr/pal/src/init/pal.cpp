@@ -278,6 +278,16 @@ InitializeDefaultStackSize()
         g_defaultStackSize = 1536 * 1024;
     }
 #endif // ENSURE_PRIMARY_STACK_SIZE
+
+#if defined(TARGET_LIBNX)
+    if (g_defaultStackSize == 0)
+    {
+        // libnx/newlib defaults pthread stacks to 128KB, far too small for the
+        // runtime (the finalizer thread smashed its stack running a finalizer
+        // through the interpreter).
+        g_defaultStackSize = 2 * 1024 * 1024;
+    }
+#endif
 }
 
 /*++

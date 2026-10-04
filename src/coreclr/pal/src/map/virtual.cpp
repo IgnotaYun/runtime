@@ -1592,9 +1592,14 @@ void ExecutableMemoryAllocator::Initialize()
 {
     // Enable the executable memory allocator on 64-bit platforms only
     // because 32-bit platforms have limited amount of virtual address space.
+#if defined(__SWITCH__)
+    // No JIT on libnx and the fake-mmap region is real memory: skip the 1GB
+    // executable reserve entirely.
+#else
 #ifdef HOST_64BIT
     TryReserveInitialMemory();
 #endif // HOST_64BIT
+#endif // __SWITCH__
 
 }
 

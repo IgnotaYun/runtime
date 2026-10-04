@@ -2,6 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 #include "common.h"
+
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
+#endif
 #include "gcenv.h"
 #include <exinfo.h>
 
@@ -246,6 +251,12 @@ void GcReportLoaderAllocator(promote_func* fn, ScanContext* sc, LoaderAllocator 
 //-----------------------------------------------------------------------------
 StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
 {
+#ifdef TARGET_LIBNX
+    {
+        Frame* f = pCF->GetFrame();
+        libnx_pal_log_stack("crawlframe", (void*)pCF->GetFunction(), f ? (size_t)f->GetFrameIdentifier() : (size_t)-1);
+    }
+#endif
     //
     // KEEP IN SYNC WITH DacStackReferenceWalker::Callback in debug\daccess\daccess.cpp
     //
@@ -331,6 +342,9 @@ StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
                 "Scanning ExplicitFrame %p AssocMethod = %pM FrameIdentifier = %s\n",
                 pFrame, pFrame->GetFunction(), Frame::GetFrameTypeName(pFrame->GetFrameIdentifier()));
             pFrame->GcScanRoots( gcctx->f, gcctx->sc);
+#ifdef TARGET_LIBNX
+            libnx_pal_log_stack("explicit scan done", pFrame, 0);
+#endif
         }
     }
     else

@@ -15,6 +15,8 @@ SET_DEFAULT_DEBUG_CHANNEL(THREAD); // some headers have code with asserts, so do
 #include "pal/corunix.hpp"
 #include "pal/context.h"
 #include "pal/thread.hpp"
+
+extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
 #include "pal/handlemgr.hpp"
 #include "pal/seh.hpp"
 #include "pal/signal.hpp"
@@ -2378,10 +2380,14 @@ CPalThread::GetStackBase()
     {
         Thread* nxThread = threadGetSelf();
         _ASSERTE(nxThread != NULL);
-        // stack_mem is the lowest address; the stack grows down, so the base
-        // (highest address) is stack_mem + stack_sz.
-        stackAddr = (char*)nxThread->stack_mem + nxThread->stack_sz;
+        // Threads execute on stack_mirror (a mapped alias of stack_mem);
+        // the SP lives in the mirror range, so report the mirror.
+        stackAddr = (char*)nxThread->stack_mirror + nxThread->stack_sz;
         stackSize = nxThread->stack_sz;
+        stackBase = stackAddr; // stackAddr is already the (highest) base here
+        {
+            libnx_pal_log_stack("base", stackAddr, stackSize);
+        }
     }
     (void)thread; (void)status;
     pthread_attr_destroy(&attr);
@@ -2449,8 +2455,11 @@ CPalThread::GetStackLimit()
     {
         Thread* nxThread = threadGetSelf();
         _ASSERTE(nxThread != NULL);
-        stackLimit = nxThread->stack_mem;
+        stackLimit = nxThread->stack_mirror;
         (void)thread; (void)stackSize; (void)status;
+        {
+            libnx_pal_log_stack("limit", stackLimit, 0);
+        }
     }
     pthread_attr_destroy(&attr);
 #elif !defined(TARGET_BROWSER)
@@ -2497,6 +2506,9 @@ CPalThread::GetCachedStackBase()
         m_stackBase = GetStackBase();
     }
 
+#ifdef TARGET_LIBNX
+    libnx_pal_log_stack("cachedbase", m_stackBase, (size_t)this);
+#endif
     return m_stackBase;
 }
 

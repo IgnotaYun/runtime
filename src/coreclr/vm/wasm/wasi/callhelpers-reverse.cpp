@@ -314,7 +314,7 @@ static int32_t Call_System_Private_CoreLib_System_Environment_ExecuteInDefaultAp
         LookupUnmanagedCallersOnlyMethodByName("System.Environment, System.Private.CoreLib", "ExecuteInDefaultAppDomain", &MD_System_Private_CoreLib_System_Environment_ExecuteInDefaultAppDomain_I32_I32_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_System_Environment_ExecuteInDefaultAppDomain_I32_I32_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_System_Environment_ExecuteInDefaultAppDomain_I32_I32_I32_RetI32);
     return result;
 }
@@ -369,7 +369,7 @@ static int32_t Call_System_Private_CoreLib_Internal_Runtime_InteropServices_Comp
         LookupUnmanagedCallersOnlyMethodByName("Internal.Runtime.InteropServices.ComponentActivator, System.Private.CoreLib", "GetFunctionPointer", &MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_GetFunctionPointer_I32_I32_I32_I32_I32_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_GetFunctionPointer_I32_I32_I32_I32_I32_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_GetFunctionPointer_I32_I32_I32_I32_I32_I32_RetI32);
     return result;
 }
@@ -580,7 +580,7 @@ static int32_t Call_System_Private_CoreLib_Internal_Runtime_InteropServices_Comp
         LookupUnmanagedCallersOnlyMethodByName("Internal.Runtime.InteropServices.ComponentActivator, System.Private.CoreLib", "LoadAssembly", &MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssembly_I32_I32_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssembly_I32_I32_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssembly_I32_I32_I32_RetI32);
     return result;
 }
@@ -596,7 +596,7 @@ static int32_t Call_System_Private_CoreLib_Internal_Runtime_InteropServices_Comp
         LookupUnmanagedCallersOnlyMethodByName("Internal.Runtime.InteropServices.ComponentActivator, System.Private.CoreLib", "LoadAssemblyAndGetFunctionPointer", &MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssemblyAndGetFunctionPointer_I32_I32_I32_I32_I32_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssemblyAndGetFunctionPointer_I32_I32_I32_I32_I32_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssemblyAndGetFunctionPointer_I32_I32_I32_I32_I32_I32_RetI32);
     return result;
 }
@@ -612,7 +612,7 @@ static int32_t Call_System_Private_CoreLib_Internal_Runtime_InteropServices_Comp
         LookupUnmanagedCallersOnlyMethodByName("Internal.Runtime.InteropServices.ComponentActivator, System.Private.CoreLib", "LoadAssemblyBytes", &MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssemblyBytes_I32_I32_I32_I32_I32_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssemblyBytes_I32_I32_I32_I32_I32_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_Internal_Runtime_InteropServices_ComponentActivator_LoadAssemblyBytes_I32_I32_I32_I32_I32_I32_RetI32);
     return result;
 }
@@ -657,7 +657,7 @@ static int32_t Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMa
         LookupUnmanagedCallersOnlyMethodByName("System.Runtime.InteropServices.TypeMapLazyDictionary, System.Private.CoreLib", "NewExternalTypeEntry", &MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewExternalTypeEntry_I32_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewExternalTypeEntry_I32_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewExternalTypeEntry_I32_I32_RetI32);
     return result;
 }
@@ -673,7 +673,7 @@ static int32_t Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMa
         LookupUnmanagedCallersOnlyMethodByName("System.Runtime.InteropServices.TypeMapLazyDictionary, System.Private.CoreLib", "NewPrecachedExternalTypeMap", &MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewPrecachedExternalTypeMap_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewPrecachedExternalTypeMap_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewPrecachedExternalTypeMap_I32_RetI32);
     return result;
 }
@@ -689,7 +689,7 @@ static int32_t Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMa
         LookupUnmanagedCallersOnlyMethodByName("System.Runtime.InteropServices.TypeMapLazyDictionary, System.Private.CoreLib", "NewPrecachedProxyTypeMap", &MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewPrecachedProxyTypeMap_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewPrecachedProxyTypeMap_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewPrecachedProxyTypeMap_I32_RetI32);
     return result;
 }
@@ -705,7 +705,7 @@ static int32_t Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMa
         LookupUnmanagedCallersOnlyMethodByName("System.Runtime.InteropServices.TypeMapLazyDictionary, System.Private.CoreLib", "NewProxyTypeEntry", &MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewProxyTypeEntry_I32_I32_RetI32);
     }
 
-    int32_t result;
+    int64_t result; // libnx: widened
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewProxyTypeEntry_I32_I32_RetI32, (int8_t*)args, sizeof(args), (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_System_Runtime_InteropServices_TypeMapLazyDictionary_NewProxyTypeEntry_I32_I32_RetI32);
     return result;
 }
@@ -972,7 +972,7 @@ static uint32_t Call_System_Private_CoreLib_System_GC_RunFinalizers_Void_RetI32(
         LookupUnmanagedCallersOnlyMethodByName("System.GC, System.Private.CoreLib", "RunFinalizers", &MD_System_Private_CoreLib_System_GC_RunFinalizers_Void_RetI32);
     }
 
-    uint32_t result;
+    int64_t result; // libnx: widened, interp writes 8-byte slots
     ExecuteInterpretedMethodFromUnmanaged(MD_System_Private_CoreLib_System_GC_RunFinalizers_Void_RetI32, nullptr, 0, (int8_t*)&result, (PCODE)&Call_System_Private_CoreLib_System_GC_RunFinalizers_Void_RetI32);
     return result;
 }

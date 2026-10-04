@@ -5354,6 +5354,10 @@ void EECodeGenManager::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 //*******************************************************
 
 // Init statics
+#ifdef TARGET_LIBNX
+extern "C" void LibnxStartupLog(const char* stage); // pal/src/arch/arm64/libnxstubs.cpp
+#endif
+
 void ExecutionManager::Init()
 {
     CONTRACTL {
@@ -5361,22 +5365,46 @@ void ExecutionManager::Init()
         GC_NOTRIGGER;
     } CONTRACTL_END;
 
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: JumpStubCrst");
+#endif
     m_JumpStubCrst.Init(CrstJumpStubCache, CrstFlags(CRST_UNSAFE_ANYMODE|CRST_DEBUGGER_THREAD));
 
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: RangeSectionMap");
+#endif
     new(&g_codeRangeMap) RangeSectionMap();
 
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: EECodeManager");
+#endif
     m_pDefaultCodeMan = new EECodeManager();
 
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: EEJitManager");
+#endif
     m_pEEJitManager = new EEJitManager();
 
 
 #ifdef FEATURE_READYTORUN
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: ReadyToRunJitManager");
+#endif
     m_pReadyToRunJitManager = new ReadyToRunJitManager();
 #endif
 
 #ifdef FEATURE_INTERPRETER
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: InterpreterCodeManager");
+#endif
     m_pInterpreterCodeMan = new InterpreterCodeManager();
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: InterpreterJitManager");
+#endif
     m_pInterpreterJitManager = new InterpreterJitManager();
+#endif
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("ExecMan: done");
 #endif
 }
 

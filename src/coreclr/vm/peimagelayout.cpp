@@ -113,11 +113,12 @@ PEImageLayout* PEImageLayout::LoadConverted(PEImage* pOwner, bool disableMapping
     if (pFlat == NULL || !pFlat->CheckILOnlyFormat())
         EEFileLoadException::Throw(pOwner->GetPathForErrorMessages(), COR_E_BADIMAGEFORMAT);
 
-#if defined(TARGET_UNIX)
+#if defined(TARGET_UNIX) && !defined(TARGET_LIBNX)
     // We should not see R2R files here on Unix when R2R is expected/allowed for the image.
     // ConvertedImageLayout may be able to handle them, but the fact that we were unable to
     // load directly implies that MAPMapPEFile could not consume what crossgen produced.
     // That is suspicious; one or another might have a bug.
+    // (libnx: expected - the fake mmap cannot satisfy section-aligned direct mapping.)
     _ASSERTE(!pOwner->IsFile() || !pFlat->HasReadyToRunHeader() || !AllowR2RForImage(pOwner) || pOwner->IsCompressed() || disableMapping);
 #endif
 

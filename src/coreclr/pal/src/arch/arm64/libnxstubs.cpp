@@ -128,11 +128,45 @@ RaiseException(
 }
 
 // WIN32 debug-output APIs. pal/src/debug/debug.cpp is excluded on libnx.
-extern "C" VOID PALAPI
-DebugBreak()
+#include <unwind.h>
+
+static _Unwind_Reason_Code LibnxBtCb(struct _Unwind_Context* ctx, void* arg)
 {
+    int* i = (int*)arg;
+    if (*i >= 14) return _URC_END_OF_STACK;
+    void* ip = (void*)_Unwind_GetIP(ctx);
+    if (ip)
+    {
+        char buf[96];
+        int n = snprintf(buf, sizeof(buf), "  ubt[%d]=%p", *i, ip);
+        svcOutputDebugString(buf, n);
+        (*i)++;
+    }
+    return _URC_NO_REASON;
+}
+
+extern "C" void LibnxDebugBreakImpl(void* caller, void* fp)
+{
+    char buf[160];
+    int n0 = snprintf(buf, sizeof(buf), "  dbgbrk caller=%p", caller);
+    svcOutputDebugString(buf, n0);
+    int i = 0;
+    _Unwind_Backtrace(LibnxBtCb, &i);
+    svcOutputDebugString("\n", 1);
     __builtin_trap();
 }
+
+// Naked entry so x30 (true caller) and x29 are sampled before any prologue.
+__asm__(
+    ".globl DebugBreak\n"
+    ".type DebugBreak, %function\n"
+    "DebugBreak:\n"
+    "    .cfi_startproc\n"
+    "    mov x0, x30\n"
+    "    mov x1, x29\n"
+    "    b LibnxDebugBreakImpl\n"
+    "    .cfi_endproc\n"
+);
 
 extern "C" VOID PALAPI
 OutputDebugStringA(IN LPCSTR lpOutputString)
@@ -147,7 +181,14 @@ OutputDebugStringA(IN LPCSTR lpOutputString)
 extern "C" VOID PALAPI
 OutputDebugStringW(IN LPCWSTR lpOutputString)
 {
-    (void)lpOutputString;  // wchar_t* — not converted here; stub only
+    if (!lpOutputString) return;
+    char buf[512];
+    int n = WideCharToMultiByte(CP_UTF8, 0, lpOutputString, -1, buf, sizeof(buf), NULL, NULL);
+    if (n > 0)
+    {
+        svcOutputDebugString(buf, n - 1);
+        fputs(buf, stderr);
+    }
 }
 
 // PAL exception-record allocation — normally in seh-unwind.cpp which we
@@ -272,10 +313,51 @@ extern "C" int pause(void)
         sleep(3600);
 }
 
+// Emulated in-process pipes. libnx has no kernel pipes; the PAL only needs
+// them for CREATE_SUSPENDED thread startup (1-byte wakeup), so a small
+// static table with condvar blocking is sufficient. Pipe fds live in a
+// reserved range; read/write/close/fcntl below route them here and forward
+// everything else to newlib's reentrant syscalls.
+#define NX_PIPE_FD_BASE 10000
+#define NX_MAX_PIPES 16
+#define NX_PIPE_BUF 256
+
+struct NxPipe
+{
+    bool used, read_open, write_open;
+    uint8_t buf[NX_PIPE_BUF];
+    size_t head, tail, count;
+    pthread_mutex_t mtx;
+    pthread_cond_t cond;
+};
+
+static NxPipe g_nxPipes[NX_MAX_PIPES];
+static pthread_mutex_t g_nxPipeAllocLock = PTHREAD_MUTEX_INITIALIZER;
+
+static inline bool nx_is_pipe_fd(int fd) { return fd >= NX_PIPE_FD_BASE && fd < NX_PIPE_FD_BASE + 2 * NX_MAX_PIPES; }
+static inline NxPipe* nx_pipe_for(int fd) { return &g_nxPipes[(fd - NX_PIPE_FD_BASE) / 2]; }
+
 extern "C" int pipe(int fds[2])
 {
-    (void)fds;
-    errno = ENOSYS;
+    pthread_mutex_lock(&g_nxPipeAllocLock);
+    for (int i = 0; i < NX_MAX_PIPES; i++)
+    {
+        if (!g_nxPipes[i].used)
+        {
+            NxPipe* p = &g_nxPipes[i];
+            p->used = true;
+            p->read_open = p->write_open = true;
+            p->head = p->tail = p->count = 0;
+            pthread_mutex_init(&p->mtx, nullptr);
+            pthread_cond_init(&p->cond, nullptr);
+            pthread_mutex_unlock(&g_nxPipeAllocLock);
+            fds[0] = NX_PIPE_FD_BASE + 2 * i;
+            fds[1] = NX_PIPE_FD_BASE + 2 * i + 1;
+            return 0;
+        }
+    }
+    pthread_mutex_unlock(&g_nxPipeAllocLock);
+    errno = EMFILE;
     return -1;
 }
 
@@ -287,31 +369,8 @@ extern "C" int posix_memalign(void **memptr, size_t alignment, size_t size)
     return *memptr ? 0 : ENOMEM;
 }
 
-// pread/pwrite: not in newlib's set for Switch. Sequential seek+op; single
-// process, so the fd-offset race does not exist.
-extern "C" ssize_t pread(int fd, void *buf, size_t count, off_t offset)
-{
-    off_t saved = lseek(fd, 0, SEEK_CUR);
-    if (saved == (off_t)-1)
-        return -1;
-    if (lseek(fd, offset, SEEK_SET) == (off_t)-1)
-        return -1;
-    ssize_t ret = read(fd, buf, count);
-    lseek(fd, saved, SEEK_SET);
-    return ret;
-}
-
-extern "C" ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset)
-{
-    off_t saved = lseek(fd, 0, SEEK_CUR);
-    if (saved == (off_t)-1)
-        return -1;
-    if (lseek(fd, offset, SEEK_SET) == (off_t)-1)
-        return -1;
-    ssize_t ret = write(fd, buf, count);
-    lseek(fd, saved, SEEK_SET);
-    return ret;
-}
+// pread/pwrite are provided by the host (native/shared/io_shims.c), which
+// implements them on top of newlib's reentrant syscalls.
 
 extern "C" long sysconf(int name)
 {
@@ -379,4 +438,166 @@ extern "C" int CorDBGetInterface(DebugInterface** rcInterface)
 CorUnix::PAL_ERROR InjectActivationInternal(CorUnix::CPalThread* pThread)
 {
     return ERROR_NOT_SUPPORTED;
+}
+
+// Temporary EE startup stage logging for bring-up debugging (declared in
+// vm/libnx context, called from ceemain.cpp).
+extern "C" void LibnxStartupLog(const char* stage)
+{
+    char buf[128];
+    int n = snprintf(buf, sizeof(buf), "EE: %s\n", stage);
+    svcOutputDebugString(buf, (size_t)n);
+}
+
+extern "C" void libnx_pal_log_stack(const char* what, void* a, size_t b)
+{
+    char buf[128];
+    int n = snprintf(buf, sizeof(buf), "palstack: %s %p %zu\n", what, a, b);
+    svcOutputDebugString(buf, n);
+}
+
+// fd routing for emulated pipes ------------------------------------------------
+
+#include <reent.h>
+#include <sys/unistd.h>
+
+extern "C" ssize_t read(int fd, void* buf, size_t n)
+{
+    if (!nx_is_pipe_fd(fd))
+        return _read_r(_REENT, fd, buf, n);
+
+    NxPipe* p = nx_pipe_for(fd);
+    if (!p->used || (fd - NX_PIPE_FD_BASE) % 2 != 0 || !p->read_open)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    pthread_mutex_lock(&p->mtx);
+    while (p->count == 0)
+    {
+        if (!p->write_open)
+        {
+            pthread_mutex_unlock(&p->mtx);
+            return 0;
+        }
+        pthread_cond_wait(&p->cond, &p->mtx);
+    }
+    size_t got = 0;
+    uint8_t* out = (uint8_t*)buf;
+    while (got < n && p->count > 0)
+    {
+        out[got++] = p->buf[p->head];
+        p->head = (p->head + 1) % NX_PIPE_BUF;
+        p->count--;
+    }
+    pthread_cond_broadcast(&p->cond);
+    pthread_mutex_unlock(&p->mtx);
+    return (ssize_t)got;
+}
+
+extern "C" ssize_t write(int fd, const void* buf, size_t n)
+{
+    if (!nx_is_pipe_fd(fd))
+    {
+        // stdout/stderr: also mirror to svcOutputDebugString so managed
+        // Console output is visible under emulators/debuggers.
+        if ((fd == 1 || fd == 2) && buf && n > 0)
+            svcOutputDebugString((const char*)buf, n);
+        return _write_r(_REENT, fd, buf, n);
+    }
+
+    NxPipe* p = nx_pipe_for(fd);
+    if (!p->used || (fd - NX_PIPE_FD_BASE) % 2 != 1 || !p->write_open)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    pthread_mutex_lock(&p->mtx);
+    if (!p->read_open)
+    {
+        pthread_mutex_unlock(&p->mtx);
+        errno = EPIPE;
+        return -1;
+    }
+    const uint8_t* in = (const uint8_t*)buf;
+    size_t put = 0;
+    while (put < n)
+    {
+        while (p->count == NX_PIPE_BUF)
+        {
+            if (!p->read_open)
+            {
+                pthread_mutex_unlock(&p->mtx);
+                errno = EPIPE;
+                return put ? (ssize_t)put : -1;
+            }
+            pthread_cond_wait(&p->cond, &p->mtx);
+        }
+        p->buf[p->tail] = in[put++];
+        p->tail = (p->tail + 1) % NX_PIPE_BUF;
+        p->count++;
+    }
+    pthread_cond_broadcast(&p->cond);
+    pthread_mutex_unlock(&p->mtx);
+    return (ssize_t)put;
+}
+
+extern "C" int close(int fd)
+{
+    if (!nx_is_pipe_fd(fd))
+        return _close_r(_REENT, fd);
+
+    NxPipe* p = nx_pipe_for(fd);
+    if (!p->used)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    pthread_mutex_lock(&p->mtx);
+    if ((fd - NX_PIPE_FD_BASE) % 2 == 0)
+        p->read_open = false;
+    else
+        p->write_open = false;
+    bool done = !p->read_open && !p->write_open;
+    pthread_cond_broadcast(&p->cond);
+    pthread_mutex_unlock(&p->mtx);
+    if (done)
+    {
+        pthread_mutex_destroy(&p->mtx);
+        pthread_cond_destroy(&p->cond);
+        p->used = false;
+    }
+    return 0;
+}
+
+extern "C" void libnx_interp_log(const char* name)
+{
+    char buf[160];
+    int n = snprintf(buf, sizeof(buf), "interp: %s\n", name ? name : "?");
+    svcOutputDebugString(buf, n);
+}
+
+extern "C" void libnx_revthunk_log(const char* src, int found)
+{
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf), "revthunk: %s -> %s\n", src ? src : "?", found ? "hit" : "MISS");
+    svcOutputDebugString(buf, n);
+}
+
+extern "C" void nx_gc_phase(const char* phase)
+{
+    char buf[96];
+    int n = snprintf(buf, sizeof(buf), "gc: %s\n", phase);
+    svcOutputDebugString(buf, n);
+}
+
+// Report stack-smash with the faulting function's return address so it can be
+// symbolized offline, instead of newlib's blind abort.
+extern "C" void __stack_chk_fail(void)
+{
+    void* lr = __builtin_return_address(0);
+    char buf[96];
+    int n = snprintf(buf, sizeof(buf), "STACK SMASH in function returning to %p\n", lr);
+    svcOutputDebugString(buf, n);
+    __builtin_trap();
 }

@@ -9,6 +9,11 @@
  */
 
 #include "common.h"
+
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
+#endif
 #include "gcenv.h"
 #include "../gc/env/gcenv.ee.h"
 #include "threadsuspend.h"
@@ -21,6 +26,9 @@
 #endif // FEATURE_COMINTEROP
 
 #include "gctoclreventsink.h"
+#ifdef FEATURE_INTERPRETER
+#include "interpexec.h"
+#endif
 #include "configuration.h"
 #include "genanalysis.h"
 #include "eventpipeadapter.h"
@@ -140,6 +148,9 @@ static void ScanStackRoots(Thread * pThread, promote_func* fn, ScanContext* sc)
                 IsGCSpecialThread() ||
                 (GetThread() == ThreadSuspend::GetSuspensionThread() && ThreadStore::HoldingThreadStore()));
 
+#ifdef TARGET_LIBNX
+    { nx_gc_phase("SSR: begin thread"); }
+#endif
     Frame* pTopFrame = pThread->GetFrame();
     Object ** topStack = (Object **)pTopFrame;
     if (InlinedCallFrame::FrameHasActiveCall(pTopFrame))
@@ -163,6 +174,10 @@ static void ScanStackRoots(Thread * pThread, promote_func* fn, ScanContext* sc)
         {
             Object ** bottomStack = (Object **) pThread->GetCachedStackBase();
             Object ** walk;
+#ifdef TARGET_LIBNX
+            libnx_pal_log_stack("consscan", topStack, (size_t)bottomStack);
+            libnx_pal_log_stack("  thread", pThread, (size_t)pThread->GetThreadId());
+#endif
             for (walk = topStack; walk < bottomStack; walk ++)
             {
                 if (((void*)*walk > (void*)bottomStack || (void*)*walk < (void*)topStack) &&
@@ -174,6 +189,29 @@ static void ScanStackRoots(Thread * pThread, promote_func* fn, ScanContext* sc)
                 }
             }
         }
+
+#ifdef FEATURE_INTERPRETER
+        // The interpreter's evaluation stack is a separately allocated region,
+        // not part of the C stack scanned above. With conservative GC the
+        // precise interp-frame reporting (StackWalkFrames) is skipped, so scan
+        // the interp stack conservatively or live objects get collected.
+        if (sc->promotion)
+        {
+            InterpThreadContext* pInterpCtx = pThread->GetInterpThreadContext();
+            if (pInterpCtx != NULL)
+            {
+                Object ** iwalk = (Object **)pInterpCtx->pStackStart;
+                Object ** ibottom = (Object **)pInterpCtx->pStackPointer;
+                for (; iwalk < ibottom; iwalk++)
+                {
+                    if ((void*)*iwalk >= (void*)g_lowest_address && (void*)*iwalk <= (void*)g_highest_address)
+                    {
+                        fn(iwalk, sc, GC_CALL_INTERIOR|GC_CALL_PINNED);
+                    }
+                }
+            }
+        }
+#endif // FEATURE_INTERPRETER
 
         // Also ask the explicit Frames to report any references they might know about.
         // Generally these will be a subset of the objects reported below but there's
@@ -195,7 +233,13 @@ static void ScanStackRoots(Thread * pThread, promote_func* fn, ScanContext* sc)
         flagsStackWalk |= GC_FUNCLET_REFERENCE_REPORTING;
 
         gcctx.pScannedSlots = NULL;
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("SSR: StackWalkFrames begin"); }
+#endif
         pThread->StackWalkFrames( GcStackCrawlCallBack, &gcctx, flagsStackWalk);
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("SSR: StackWalkFrames done"); }
+#endif
         delete gcctx.pScannedSlots;
     }
 

@@ -11236,7 +11236,8 @@ void CEECodeGenInfo::getHelperFtn(CorInfoHelpFunc    ftnNum,               /* IN
     {
         helperMD = GetMethodDescForILBasedDynamicJitHelper(dynamicFtnNum);
         _ASSERTE(PortableEntryPoint::GetMethodDesc((PCODE)targetAddr) == helperMD);
-#ifdef FEATURE_READYTORUN
+#if defined(FEATURE_READYTORUN) && !defined(TARGET_LIBNX)
+        // libnx is interpreter-only: IL-based helpers have no native code.
         _ASSERTE(PortableEntryPoint::GetActualCode((PCODE)targetAddr) != NULL);
 #endif
     }

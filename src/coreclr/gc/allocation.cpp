@@ -3,6 +3,10 @@
 
 #include "gcinternal.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#endif
+
 #ifdef SERVER_GC
 namespace SVR
 {
@@ -3865,6 +3869,9 @@ enter_msl_status gc_heap::trigger_gc_for_alloc (int gen_number, gc_reason gr,
 #endif //MULTIPLE_HEAPS
 
     vm_heap->GarbageCollectGeneration (gen_number, gr);
+#ifdef TARGET_LIBNX
+    { nx_gc_phase("GarbageCollectGeneration returned"); }
+#endif
 
 #ifdef MULTIPLE_HEAPS
     if (!loh_p)

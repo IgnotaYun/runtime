@@ -18,6 +18,10 @@
 
 #include "gcinternal.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#endif
+
 #ifdef SERVER_GC
 namespace SVR {
 #else // SERVER_GC
@@ -2921,6 +2925,9 @@ void
 gc_heap::suspend_EE ()
 {
     dprintf (2, ("suspend_EE"));
+#ifdef TARGET_LIBNX
+    { nx_gc_phase("suspend_EE"); }
+#endif
     GCToEEInterface::SuspendEE (SUSPEND_FOR_GC_PREP);
 }
 
@@ -2928,6 +2935,9 @@ void
 gc_heap::restart_EE ()
 {
     dprintf (2, ("restart_EE"));
+#ifdef TARGET_LIBNX
+    { nx_gc_phase("restart_EE"); }
+#endif
     GCToEEInterface::RestartEE (/* bUnused */ true);
 }
 

@@ -11,6 +11,10 @@
 
 #include "common.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#endif
+
 #include "threadsuspend.h"
 
 #include "finalizerthread.h"
@@ -3338,6 +3342,9 @@ void ThreadSuspend::SuspendAllThreads()
     // preemptive mode.
     minipal_memory_barrier_process_wide();
 #endif //TARGET_ARM || TARGET_ARM64
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: barrier done");
+#endif
 
     STRESS_LOG0(LF_SYNC, LL_INFO1000, "Thread::SuspendAllThreads() - Success\n");
 }
@@ -3563,6 +3570,9 @@ void ThreadSuspend::ResumeAllThreads(BOOL SuspendSucceeded)
         // is restarted.
         minipal_memory_barrier_process_wide();
 #endif //TARGET_ARM || TARGET_ARM64
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: barrier done");
+#endif
 
     //
     // Allow threads to enter COOP mode (though we still need to wake the ones
@@ -5393,13 +5403,22 @@ void ThreadSuspend::RestartEE(BOOL SuspendSucceeded)
     // is restarted.
     minipal_memory_barrier_process_wide();
 #endif //TARGET_ARM || TARGET_ARM64
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: barrier done");
+#endif
 
     //
     // SyncClean::CleanUp reclaims resources that are safe to free only
     // when no threads are running managed code. Since the EE is
     // suspended at this point, we know it's safe to clean up here.
     //
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: before SyncClean");
+#endif
     SyncClean::CleanUp();
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: SyncClean done");
+#endif
 
 #ifdef PROFILING_SUPPORTED
     // If a profiler is keeping track suspend events, notify it.  This notification
@@ -5424,7 +5443,13 @@ void ThreadSuspend::RestartEE(BOOL SuspendSucceeded)
     ClrFlsClearThreadType (ThreadType_DynamicSuspendEE);
     GCHeapUtilities::GetGCHeap()->SetGCInProgress(false);
 
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: before ResumeAllThreads");
+#endif
     ResumeAllThreads(SuspendSucceeded);
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: ResumeAllThreads done");
+#endif
 
     //
     // Notify everyone who cares, that this suspension is over, and this thread is going to go do other things.
@@ -5451,7 +5476,13 @@ void ThreadSuspend::RestartEE(BOOL SuspendSucceeded)
     //
     // Unlock the thread store.  At this point, all threads should be allowed to run.
     //
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: before UnlockThreadStore");
+#endif
     ThreadSuspend::UnlockThreadStore();
+#ifdef TARGET_LIBNX
+    nx_gc_phase("RestartEE: UnlockThreadStore done");
+#endif
 
 #ifdef TIME_SUSPEND
     g_SuspendStatistics.releaseTSL.Accumulate(SuspendStatistics::GetElapsed(startRelease,

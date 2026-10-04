@@ -284,7 +284,12 @@ if(CLR_CMAKE_TARGET_LIBNX)
     list(APPEND VM_SOURCES_DAC_AND_WKS_COMMON
         dactable-libnx.cpp
         libnx/portabilitystubs.cpp
+        libnx/reversethunks.cpp
+        libnx/calldescrlibnx.cpp
+        wasm/wasi/callhelpers-reverse.cpp
     )
+    # callhelpers-reverse.cpp does #include <callhelpers.hpp> from vm/wasm.
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/wasm)
 endif()
 list(APPEND VM_HEADERS_DAC_AND_WKS_COMMON
     pregeneratedstringthunks.h

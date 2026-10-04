@@ -599,6 +599,10 @@ void FatalErrorHandler(UINT errorCode, LPCWSTR pszMessage)
     EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(errorCode, pszMessage);
 }
 
+#ifdef TARGET_LIBNX
+extern "C" void LibnxStartupLog(const char* stage); // pal/src/arch/arm64/libnxstubs.cpp
+#endif
+
 void EEStartupHelper()
 {
     CONTRACTL
@@ -621,6 +625,9 @@ void EEStartupHelper()
     {
         g_fEEInit = true;
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("EEStartupHelper: begin");
+#endif
 
         // We cache the SystemInfo for anyone to use throughout the life of the EE.
         GetSystemInfo(&g_SystemInfo);
@@ -638,6 +645,9 @@ void EEStartupHelper()
         // This needs to be done before config because config uses SString::Empty()
         SString::Startup();
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("EEConfig::Setup");
+#endif
         IfFailGo(EEConfig::Setup());
 
 
@@ -655,6 +665,9 @@ void EEStartupHelper()
 
         PendingTypeLoadTable::Init();
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("ExecutableAllocator::StaticInitialize");
+#endif
         IfFailGo(ExecutableAllocator::StaticInitialize(FatalErrorHandler));
 
         if (g_pConfig != NULL)
@@ -777,6 +790,9 @@ void EEStartupHelper()
         STRESS_LOG0(LF_STARTUP, LL_ALWAYS, "===================EEStartup Starting===================");
 
 #ifndef TARGET_UNIX
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("EnsureRtlFunctions");
+#endif
         IfFailGoLog(EnsureRtlFunctions());
 #endif // !TARGET_UNIX
 
@@ -814,20 +830,32 @@ void EEStartupHelper()
 
         // Crsts and SimpleRWLocks all use the same spin heuristics
         // Cache the (potentially user-overridden) values now so they are accessible from asm routines
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("InitializeSpinConstants");
+#endif
         InitializeSpinConstants();
 
         // Initialize EBR (Epoch-Based Reclamation) for safe deferred deletion.
         // This must be done before any HashMap is initialized with fAsyncMode=TRUE.
         g_EbrCollector.Init();
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("StubManager::InitializeStubManagers");
+#endif
         StubManager::InitializeStubManagers();
 
         // Set up the cor handle map. This map is used to load assemblies in
         // memory instead of using the normal system load
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("PEImage::Startup");
+#endif
         PEImage::Startup();
 
         AccessCheckOptions::Startup();
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("CoreLibBinder::Startup");
+#endif
         CoreLibBinder::Startup();
 
         StubLinkerCPU::Init();
@@ -837,6 +865,9 @@ void EEStartupHelper()
         CDacPlatformMetadata::InitPrecodes();
 #endif // !FEATURE_PORTABLE_ENTRYPOINTS
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("InitializeGarbageCollector");
+#endif
         InitializeGarbageCollector();
 
         if (!GCHandleUtilities::GetGCHandleManager()->Initialize())
@@ -847,6 +878,9 @@ void EEStartupHelper()
         g_pEEShutDownEvent = new CLREvent();
         g_pEEShutDownEvent->CreateManualEvent(FALSE);
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("VirtualCallStubManager::InitStatic");
+#endif
         VirtualCallStubManager::InitStatic();
 
         // Setup the domains. Threads are started in a default domain.
@@ -854,8 +888,14 @@ void EEStartupHelper()
         // Static initialization
         SystemDomain::Attach();
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("COMDelegate::Init");
+#endif
         COMDelegate::Init();
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("ExecutionManager::Init");
+#endif
         ExecutionManager::Init();
 
 #ifdef FEATURE_PERFMAP
@@ -875,7 +915,7 @@ void EEStartupHelper()
         // Initialize the debugging services. This must be done before any
         // EE thread objects are created, and before any classes or
         // modules are loaded.
-#ifndef TARGET_WASM
+#if !defined(TARGET_WASM) && !defined(TARGET_LIBNX)
         InitializeDebugger(); // throws on error
 #endif
 #endif // DEBUGGING_SUPPORTED
@@ -893,6 +933,9 @@ void EEStartupHelper()
         // Create the finalizer thread on windows earlier, as we will need to wait for
         // the completion of its initialization part that initializes COM as that has to be done
         // before the first Thread is attached. Thus we want to give the thread a bit more time.
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("FinalizerThreadCreate");
+#endif
         FinalizerThread::FinalizerThreadCreate();
 #endif // TARGET_WINDOWS
 
@@ -915,6 +958,9 @@ void EEStartupHelper()
         // This isn't done as part of InitializeGarbageCollector() above because it
         // requires write barriers to have been set up on x86, which happens as part
         // of InitJITWriteBarrierHelpers.
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("g_pGCHeap->Initialize begin");
+#endif
         hr = g_pGCHeap->Initialize();
         if (FAILED(hr))
         {
@@ -923,6 +969,9 @@ void EEStartupHelper()
 
         IfFailGo(hr);
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("InitializeExceptionHandling");
+#endif
         InitializeExceptionHandling();
 
         //
@@ -945,6 +994,9 @@ void EEStartupHelper()
 
         // throws on error
         _ASSERTE(GetThreadNULLOk() == NULL);
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("SetupThread");
+#endif
         SetupThread();
 
 #ifdef DEBUGGING_SUPPORTED
@@ -969,9 +1021,18 @@ void EEStartupHelper()
         // Finish setting up rest of EventPipe - specifically enable SampleProfiler if it was requested at startup.
         // SampleProfiler needs to cooperate with the GC which hasn't fully finished setting up in the first part of the
         // EventPipe initialization, so this is done after the GC has been fully initialized.
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("EventPipeAdapter::FinishInitialize");
+        // EventPipe brings up IPC sockets/threads we don't have on libnx; skip.
+        LibnxStartupLog("EventPipe skipped");
+#else
         EventPipeAdapter::FinishInitialize();
+#endif
 #endif // FEATURE_PERFTRACING
         GenAnalysis::Initialize();
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("GenAnalysis::Initialize done");
+#endif
 
         // Now we really have fully initialized the garbage collector
         SetGarbageCollectorFullyInitialized();
@@ -987,14 +1048,23 @@ void EEStartupHelper()
 #endif
 
 #ifdef HAVE_GCCOVER
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("MethodDesc::Init");
+#endif
         MethodDesc::Init();
 #endif
 #ifdef CDAC_STRESS
         CdacStressPolicy::Initialize();
 #endif
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("Assembly::Initialize");
+#endif
         Assembly::Initialize();
 
+#ifdef TARGET_LIBNX
+        LibnxStartupLog("SystemDomain::Init");
+#endif
         SystemDomain::System()->Init();
 
 #ifdef PROFILING_SUPPORTED
@@ -1051,10 +1121,16 @@ void EEStartupHelper()
 
 
 ErrExit: ;
+#ifdef TARGET_LIBNX
+    { char b[96]; sprintf(b, "EEStartupHelper ErrExit hr=0x%08x", (unsigned)hr); LibnxStartupLog(b); }
+#endif
     }
     EX_CATCH
     {
         hr = GET_EXCEPTION()->GetHR();
+#ifdef TARGET_LIBNX
+        { char b[96]; sprintf(b, "EEStartupHelper EX_CATCH hr=0x%08x", (unsigned)hr); LibnxStartupLog(b); }
+#endif
         RethrowTerminalExceptionsWithInitCheck();
     }
     EX_END_CATCH

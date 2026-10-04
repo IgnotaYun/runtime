@@ -122,6 +122,11 @@ add_compile_definitions($<${FEATURE_INTERPRETER}:FEATURE_INTERPRETER>)
 if (FEATURE_DYNAMIC_CODE_COMPILED)
   add_compile_definitions(FEATURE_DYNAMIC_CODE_COMPILED)
 endif()
+if (CLR_CMAKE_TARGET_LIBNX)
+  # No libunwind/signals on libnx: report stack roots conservatively instead of
+  # walking frames with the precise stackwalker.
+  add_compile_definitions(FEATURE_CONSERVATIVE_GC)
+endif()
 if (FEATURE_PORTABLE_ENTRYPOINTS)
   add_compile_definitions(FEATURE_PORTABLE_ENTRYPOINTS)
 endif()

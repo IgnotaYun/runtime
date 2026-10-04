@@ -3,6 +3,10 @@
 
 #include "gcinternal.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#endif
+
 #ifdef SERVER_GC
 namespace SVR
 {
@@ -165,13 +169,22 @@ void gc_heap::gc1()
         else
 #endif //BACKGROUND_GC
         {
+#ifdef TARGET_LIBNX
+            { nx_gc_phase("mark begin"); }
+#endif
             mark_phase (n);
+#ifdef TARGET_LIBNX
+            { nx_gc_phase("mark done"); }
+#endif
 
             check_gen0_bricks();
 
             GCScan::GcRuntimeStructuresValid (FALSE);
             plan_phase (n);
             GCScan::GcRuntimeStructuresValid (TRUE);
+#ifdef TARGET_LIBNX
+            { nx_gc_phase("plan done"); }
+#endif
 
             check_gen0_bricks();
         }
@@ -806,7 +819,13 @@ void gc_heap::garbage_collect_pm_full_gc()
     assert (settings.condemned_generation == max_generation);
     assert (settings.reason == reason_pm_full_gc);
     assert (!settings.concurrent);
+#ifdef TARGET_LIBNX
+    { nx_gc_phase("gc1 begin"); }
+#endif
     gc1();
+#ifdef TARGET_LIBNX
+    { nx_gc_phase("gc1 done"); }
+#endif
 }
 
 void gc_heap::garbage_collect (int n)
@@ -1304,13 +1323,23 @@ void gc_heap::garbage_collect (int n)
     {
         gc1();
     }
+#ifdef TARGET_LIBNX
+    nx_gc_phase("main gc1 done");
+#endif
 #ifndef MULTIPLE_HEAPS
+    nx_gc_phase("before lowres_ticks");
     allocation_running_time = minipal_lowres_ticks();
+    nx_gc_phase("lowres_ticks done");
     allocation_running_amount = dd_new_allocation (dynamic_data_of (0));
+    nx_gc_phase("new_allocation 1 done");
     fgn_last_alloc = dd_new_allocation (dynamic_data_of (0));
+    nx_gc_phase("new_allocation 2 done");
 #endif //MULTIPLE_HEAPS
 
 done:
+#ifdef TARGET_LIBNX
+    nx_gc_phase("garbage_collect done");
+#endif
     if (saved_settings_pause_mode == pause_no_gc)
         allocate_for_no_gc_after_gc();
 }
@@ -1492,6 +1521,9 @@ void gc_heap::do_pre_gc()
 
 void gc_heap::do_post_gc()
 {
+#ifdef TARGET_LIBNX
+    nx_gc_phase("do_post_gc begin");
+#endif
 #ifdef MULTIPLE_HEAPS
     gc_heap* hp = g_heaps[0];
 #else
@@ -1499,11 +1531,17 @@ void gc_heap::do_post_gc()
 #endif //MULTIPLE_HEAPS
 
     GCToEEInterface::GcDone(settings.condemned_generation);
+#ifdef TARGET_LIBNX
+    nx_gc_phase("do_post_gc: GcDone done");
+#endif
 
     GCToEEInterface::DiagGCEnd(VolatileLoad(&settings.gc_index),
                          (uint32_t)settings.condemned_generation,
                          (uint32_t)settings.reason,
                          !!settings.concurrent);
+#ifdef TARGET_LIBNX
+    nx_gc_phase("do_post_gc: DiagGCEnd done");
+#endif
 
     add_to_history();
 
@@ -1729,6 +1767,9 @@ void gc_heap::do_post_gc()
         grow_mark_list();
         mark_list_overflow = false;
     }
+#ifdef TARGET_LIBNX
+    nx_gc_phase("do_post_gc end");
+#endif
 }
 
 } // namespace WKS/SVR

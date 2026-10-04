@@ -3,6 +3,10 @@
 
 #include "gcinternal.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#endif
+
 #ifdef SERVER_GC
 namespace SVR
 {
@@ -1963,6 +1967,9 @@ GCHeap::GarbageCollectGeneration (unsigned int gen, gc_reason reason)
     {
         BEGIN_TIMING(gc_during_log);
         pGenGCHeap->garbage_collect (condemned_generation_number);
+#ifdef TARGET_LIBNX
+        nx_gc_phase("GCG: garbage_collect returned");
+#endif
         if (gc_heap::pm_trigger_full_gc)
         {
             pGenGCHeap->garbage_collect_pm_full_gc();
@@ -1980,14 +1987,29 @@ GCHeap::GarbageCollectGeneration (unsigned int gen, gc_reason reason)
         gc_heap::add_bgc_pause_duration_0();
 #endif //BACKGROUND_GC
         BEGIN_TIMING(restart_ee_during_log);
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("GCG: before RestartEE"); }
+#endif
         GCToEEInterface::RestartEE(TRUE);
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("GCG: RestartEE done"); }
+#endif
         END_TIMING(restart_ee_during_log);
     }
+#ifdef TARGET_LIBNX
+    nx_gc_phase("GCG: before process_sync_log_stats");
+#endif
     process_sync_log_stats();
     gc_heap::gc_started = FALSE;
     gc_heap::set_gc_done();
+#ifdef TARGET_LIBNX
+    nx_gc_phase("GCG: set_gc_done");
+#endif
     dprintf (SPINLOCK_LOG, ("GC Lgc"));
     leave_spin_lock (&gc_heap::gc_lock);
+#ifdef TARGET_LIBNX
+    nx_gc_phase("GCG: gc_lock released");
+#endif
 #endif //!MULTIPLE_HEAPS
 
 #ifdef FEATURE_PREMORTEM_FINALIZATION

@@ -7,6 +7,10 @@
 
 #include "common.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
+#endif
+
 #include "frames.h"
 #include "threads.h"
 #include "stackwalk.h"
@@ -4977,6 +4981,9 @@ BOOL Thread::SetStackLimits(SetStackLimitScope scope)
     {
         m_CacheStackBase  = GetStackUpperBound();
         m_CacheStackLimit = GetStackLowerBound();
+#ifdef TARGET_LIBNX
+        { libnx_pal_log_stack("setstacklimits", m_CacheStackBase, (size_t)m_CacheStackLimit); }
+#endif
         if (m_CacheStackLimit == NULL)
         {
             _ASSERTE(!"Failed to set stack limits");

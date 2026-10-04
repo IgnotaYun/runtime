@@ -3,7 +3,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IncludeRemoteExecutor>true</IncludeRemoteExecutor>
     <IncludeSpanPolyfills>true</IncludeSpanPolyfills>
-    <TargetFrameworks>$(NetCoreAppCurrent)-windows;$(NetCoreAppCurrent)-linux;$(NetCoreAppCurrent)-browser;$(NetCoreAppCurrent)-wasi;$(NetCoreAppCurrent)-osx</TargetFrameworks>
+    <TargetFrameworks>$(NetCoreAppCurrent)-windows;$(NetCoreAppCurrent)-linux;$(NetCoreAppCurrent)-browser;$(NetCoreAppCurrent)-wasi;$(NetCoreAppCurrent)-osx;$(NetCoreAppCurrent)-libnx</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(CommonPath)Polyfills\DictionaryPolyfills.cs"

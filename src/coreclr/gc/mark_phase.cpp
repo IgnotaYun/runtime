@@ -3,6 +3,10 @@
 
 #include "gcinternal.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#endif
+
 #ifdef SERVER_GC
 namespace SVR
 {
@@ -3028,9 +3032,15 @@ void gc_heap::mark_phase (int condemned_gen_number)
 
         dprintf(3,("Marking Roots"));
 
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("GcScanRoots begin"); }
+#endif
         GCScan::GcScanRoots(GCHeap::Promote,
                                 condemned_gen_number, max_generation,
                                 &sc);
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("GcScanRoots done"); }
+#endif
         drain_mark_queue();
         fire_mark_event (ETW::GC_ROOT_STACK, current_promoted_bytes, last_promoted_bytes);
 
@@ -3051,9 +3061,15 @@ void gc_heap::mark_phase (int condemned_gen_number)
 #endif // FEATURE_PREMORTEM_FINALIZATION
 
         dprintf(3,("Marking handle table"));
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("GcScanHandles begin"); }
+#endif
         GCScan::GcScanHandles(GCHeap::Promote,
                                     condemned_gen_number, max_generation,
                                     &sc);
+#ifdef TARGET_LIBNX
+        { nx_gc_phase("GcScanHandles done"); }
+#endif
         drain_mark_queue();
         fire_mark_event (ETW::GC_ROOT_HANDLES, current_promoted_bytes, last_promoted_bytes);
 

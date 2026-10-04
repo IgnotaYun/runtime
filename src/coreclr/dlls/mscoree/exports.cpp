@@ -11,6 +11,10 @@
 //*****************************************************************************
 
 #include "stdafx.h"
+
+#ifdef TARGET_LIBNX
+extern "C" void LibnxStartupLog(const char*);
+#endif
 #include <utilcode.h>
 #include <corhost.h>
 #include <configuration.h>
@@ -383,6 +387,9 @@ int coreclr_initialize(
     IfFailRet(hr);
 
     ConstWStringHolder appDomainFriendlyNameW = StringToUnicode(appDomainFriendlyName);
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("init: Start done, CreateAppDomain");
+#endif
     hr = host->CreateAppDomainWithManager(
         appDomainFriendlyNameW,
         0,
@@ -393,6 +400,9 @@ int coreclr_initialize(
         propertyValuesW,
         (DWORD *)domainId);
 
+#ifdef TARGET_LIBNX
+    LibnxStartupLog("init: CreateAppDomain done");
+#endif
     if (SUCCEEDED(hr))
     {
         *hostHandle = host.Detach();

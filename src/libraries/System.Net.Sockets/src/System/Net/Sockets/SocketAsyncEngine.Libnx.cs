@@ -32,6 +32,19 @@ namespace System.Net.Sockets
         // PreferInlineCompletions defaults to false and can be set to true using the DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS envvar.
         internal static readonly bool InlineSocketCompletionsEnabled = Environment.GetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS") == "1";
 
+        // Set when some socket is given a PreferInlineCompletions value that differs from the
+        // process-wide default above. That is done through an experimental API and virtually never
+        // happens, so until it does, the event loop can use the default without reading per-context state.
+        // This is a one-way latch - it is never reset back to false.
+        private static bool s_anyInlineCompletionsOverride;
+
+        internal static void OnInlineCompletionsOverride() => s_anyInlineCompletionsOverride = true;
+
+        private static bool PrefersInlineCompletions(SocketAsyncContext context) =>
+            // InlineSocketCompletionsEnabled is a static readonly bool, so in the common case this
+            // folds into a constant and the context is not touched at all.
+            s_anyInlineCompletionsOverride ? context.PreferInlineCompletions : InlineSocketCompletionsEnabled;
+
         private static int GetEngineCount()
         {
             // On libnx we only have 3 usable cores, we can limit to a single engine to avoid starting too many threads.
@@ -407,7 +420,7 @@ namespace System.Net.Sockets
                     {
                         SocketAsyncContext context = contextWrapper.Context;
 
-                        if (context.PreferInlineCompletions)
+                        if (PrefersInlineCompletions(context))
                         {
                             context.HandleEventsInline(socketEvent.Events);
                         }

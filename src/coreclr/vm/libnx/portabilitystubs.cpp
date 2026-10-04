@@ -41,11 +41,7 @@ void* GetPortableEntryPointToInterpreterThunk(MethodDesc *pMD)
     return nullptr;
 }
 
-void* GetUnmanagedCallersOnlyThunk(MethodDesc* pMD)
-{
-    LIBNX_PORTABILITY_ASSERT("GetUnmanagedCallersOnlyThunk is not implemented on libnx");
-    return nullptr;
-}
+// GetUnmanagedCallersOnlyThunk: implemented in libnx/reversethunks.cpp
 
 void InitializePendingThunkResolutionLock()
 {

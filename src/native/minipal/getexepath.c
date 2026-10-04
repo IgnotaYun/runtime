@@ -32,7 +32,16 @@
 
 char* minipal_getexepath(void)
 {
-#if defined(__APPLE__)
+#if defined(__SWITCH__)
+    // No /proc, no auxv on libnx. The host passes the real path via env,
+    // otherwise fall back to a constant (only used for display/exe name).
+    const char* envPath = getenv("CLRHOST_EXE_PATH");
+    if (envPath)
+    {
+        return strdup(envPath);
+    }
+    return strdup("/switch/clrhost/clr_nx.nro");
+#elif defined(__APPLE__)
     uint32_t len = PATH_MAX;
     char pathBuf[PATH_MAX];
     if (_NSGetExecutablePath(pathBuf, &len) != 0)

@@ -1318,7 +1318,8 @@ bool gc_heap::compute_hard_limit()
     // Large pages are pre-committed and cannot be decommitted, so they imply
     // never_decommit_p. On WASM, reserve == commit (posix_memalign allocates real
     // memory) and there is no way to give memory back to the engine.
-#if defined(HOST_WASM) || defined(__wasm__)
+#if defined(HOST_WASM) || defined(__wasm__) || defined(TARGET_LIBNX)
+    // libnx: reserve == commit in the fake-mmap region; nothing to give back.
     never_decommit_p = true;
 #else
     never_decommit_p = use_large_pages_p;

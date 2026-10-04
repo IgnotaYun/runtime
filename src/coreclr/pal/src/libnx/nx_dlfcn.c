@@ -3,6 +3,7 @@
 // symbol tables (see native/clrhost). Weak defaults make everything fail so
 // the PAL treats libraries as missing.
 #include <stddef.h>
+#include <stdlib.h>
 #include <dlfcn.h> // the shim header
 
 static const char* err = "dynamic loading is not supported on libnx";
@@ -44,6 +45,16 @@ char* dlerror(void)
 
 int dladdr(const void* addr, Dl_info* info)
 {
-    (void)addr; (void)info;
-    return 0;
+    // Everything is statically linked into the host NRO; report it as the
+    // containing module. The PAL uses dli_fname as the CoreCLR install path.
+    (void)addr;
+    if (info == NULL)
+        return 0;
+    info->dli_fname = getenv("CLRHOST_EXE_PATH");
+    if (info->dli_fname == NULL)
+        info->dli_fname = "/switch/clrhost/clr_nx.nro";
+    info->dli_fbase = NULL;
+    info->dli_sname = NULL;
+    info->dli_saddr = NULL;
+    return 1;
 }

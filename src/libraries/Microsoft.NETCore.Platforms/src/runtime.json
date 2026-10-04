@@ -1739,6 +1739,17 @@
         "unix-x64"
       ]
     },
+    "libnx": {
+      "#import": [
+        "unix"
+      ]
+    },
+    "libnx-arm64": {
+      "#import": [
+        "libnx",
+        "unix-arm64"
+      ]
+    },
     "illumos": {
       "#import": [
         "unix"

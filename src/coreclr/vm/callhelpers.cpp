@@ -6,10 +6,15 @@
  */
 
 #include "common.h"
+
 #include "dbginterface.h"
 
 #include "invokeutil.h"
 #include "argdestination.h"
+
+#ifdef TARGET_LIBNX
+bool LibnxCallDescrResolveTarget(CallDescrData* pCallDescrData);
+#endif
 
 #if defined(FEATURE_MULTICOREJIT) && defined(_DEBUG)
 
@@ -50,7 +55,14 @@ void CallDescrWorkerWithHandler(
 
     BEGIN_CALL_TO_MANAGEDEX(fCriticalCall ? EEToManagedCriticalCall : EEToManagedDefault);
 
-    CallDescrWorker(pCallDescrData);
+#ifdef TARGET_LIBNX
+    // Portable entrypoints are data pointers; resolve them to native code or
+    // run the target in the interpreter before the asm worker would jump to data.
+    if (!LibnxCallDescrResolveTarget(pCallDescrData))
+#endif
+    {
+        CallDescrWorker(pCallDescrData);
+    }
 
     END_CALL_TO_MANAGED();
 }

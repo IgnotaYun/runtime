@@ -466,8 +466,9 @@ CorUnix::InternalCreateFileMapping(
             // information, though...
             //
 
-#ifdef TARGET_WASI
+#if defined(TARGET_WASI) || defined(TARGET_LIBNX)
             // WASI has no dup(); re-open by path with the same access mode
+            // (libnx: fcntl(F_DUPFD) is not available either)
             // so writable mappings still work. O_CLOEXEC isn't meaningful
             // on WASI (no exec). Handles created by init_std_handle()
             // (STDIN/STDOUT/STDERR) have no backing path, so there is nothing
