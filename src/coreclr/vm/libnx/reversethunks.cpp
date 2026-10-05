@@ -234,7 +234,13 @@ namespace
 
         int64_t args[5];
         int n = 0;
-        if (target != NULL)
+        // Only prepend the delegate target for instance-method delegates.
+        // On this platform delegates over static methods can carry a non-NULL
+        // _target (observed with FNA's static PInvoke-callback delegates:
+        // _target holds a heap object, not a bound first argument), and
+        // prepending it shifts every native argument one slot, corrupting the
+        // call (KeyNotFoundException in FNA3D.INTERNAL_Read).
+        if (target != NULL && !md->IsStatic())
             args[n++] = (int64_t)target;
         bool returnsVoid = true;
         if (pInvoke != NULL)
@@ -403,6 +409,28 @@ extern "C" void* LibnxGetDelegateCallback(OBJECTREF delegateObj)
     // long-lived callbacks (loggers) stay rooted by their callers as the
     // GetFunctionPointerForDelegate contract requires.
     int slot = -1;
+    // Dedup: marshalling the same delegate object again must return the same
+    // thunk instead of leaking a slot. PInvoke stubs call this every time the
+    // PInvoke runs (e.g. FNA's static read/skip/eof delegates once per
+    // texture); without dedup the pool exhausts after a handful of calls.
+    Object* pDelegateRaw = OBJECTREFToObject(delegateObj);
+    for (int i = 0; i < g_delegateThunkAlloc && i < kDelegateThunkCount; i++)
+    {
+        if (g_delegateThunkTargets[i] != NULL &&
+            OBJECTREFToObject(ObjectFromHandle(g_delegateThunkTargets[i])) == pDelegateRaw)
+        {
+            slot = i;
+            break;
+        }
+    }
+    if (slot >= 0)
+    {
+        if (numArgs == 3)
+            return g_delegateThunksA3[slot];
+        if (numArgs == 2)
+            return g_delegateThunksA2[slot];
+        return g_delegateThunksA1[slot];
+    }
     for (int i = 0; i < g_delegateThunkAlloc; i++)
     {
         if (g_delegateThunkTargets[i] != NULL && ObjectFromHandle(g_delegateThunkTargets[i]) == NULL)

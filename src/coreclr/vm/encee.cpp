@@ -1714,7 +1714,10 @@ EncApproxFieldDescIterator::EncApproxFieldDescIterator(MethodTable *pMT, int ite
 
 #ifndef DACCESS_COMPILE
     // can't fixup for EnC on the debugger thread
+#ifndef TARGET_LIBNX
+    // libnx has no debugger services; g_pDebugInterface is NULL.
     _ASSERTE((g_pDebugInterface->GetRCThreadId() != GetCurrentThreadId()) || !(m_flags & FixUpEncFields));
+#endif
 #endif
 
     m_pCurrListElem = NULL;
