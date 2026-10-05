@@ -443,6 +443,31 @@ CorUnix::PAL_ERROR InjectActivationInternal(CorUnix::CPalThread* pThread)
 
 // Temporary EE startup stage logging for bring-up debugging (declared in
 // vm/libnx context, called from ceemain.cpp).
+// On hardware svcOutputDebugString is invisible without a debugger, so also
+// mirror to the SD log file that clrhost opens. Flushed per write: the next
+// line may never come (crash).
+extern "C" void libnx_log_to_file(const char* buf, size_t n)
+{
+    static FILE* s_logFile;
+    if (!s_logFile)
+        s_logFile = fopen("/switch/clrhost/clrhost.log", "a");
+    if (s_logFile)
+    {
+        fwrite(buf, 1, n, s_logFile);
+        fflush(s_logFile);
+    }
+}
+
+// Route every svcOutputDebugString below through the file mirror.
+extern "C" void nx_svcOutputDebugString_real(const char*, size_t);
+__asm__(".set nx_svcOutputDebugString_real, svcOutputDebugString");
+static void svc_log_mirror(const char* buf, size_t n)
+{
+    nx_svcOutputDebugString_real(buf, n);
+    libnx_log_to_file(buf, n);
+}
+#define svcOutputDebugString svc_log_mirror
+
 extern "C" void LibnxStartupLog(const char* stage)
 {
     char buf[128];
