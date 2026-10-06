@@ -50,8 +50,33 @@ void ReleaseReservedMemory(BYTE* value)
 {
     if (value)
     {
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+        if (!ExecutableAllocator::Instance()->Owns(value))
+        {
+            ClrVirtualFree(value, 0, MEM_RELEASE);
+            return;
+        }
+#endif
         ExecutableAllocator::Instance()->Release(value);
     }
+}
+
+BYTE* ReserveLoaderHeapMemory(size_t size, bool executable)
+{
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+    if (!executable)
+        return static_cast<BYTE*>(ClrVirtualAlloc(NULL, size, MEM_RESERVE, PAGE_NOACCESS));
+#endif
+    return static_cast<BYTE*>(ExecutableAllocator::Instance()->Reserve(size));
+}
+
+bool CommitLoaderHeapMemory(void* address, size_t size, bool executable)
+{
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+    if (!executable)
+        return ClrVirtualAlloc(address, size, MEM_COMMIT, PAGE_READWRITE) != NULL;
+#endif
+    return ExecutableAllocator::Instance()->Commit(address, size, executable) != NULL;
 }
 #endif // DACCESS_COMPILE
 

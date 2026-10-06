@@ -113,7 +113,11 @@ BOOL UnlockedInterleavedLoaderHeap::CommitPages(void* pData, size_t dwSizeToComm
         // the executable pages cannot speculate into the data page at any time before they are initialized.
         if (m_pConfig->DataPageGenerator != NULL)
         {
-            m_pConfig->DataPageGenerator((uint8_t*)pTemp, dwSizeToCommitPart);
+            ExecutableWriterHolder<BYTE> dataPageWriterHolder(
+                (BYTE*)pTemp,
+                dwSizeToCommitPart,
+                ExecutableAllocator::DoNotAddToCache);
+            m_pConfig->DataPageGenerator(dataPageWriterHolder.GetRW(), dwSizeToCommitPart);
         }
     }
 

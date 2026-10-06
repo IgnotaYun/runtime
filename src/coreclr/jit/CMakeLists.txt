@@ -730,7 +730,9 @@ endif()
 # Enable profile guided optimization
 add_pgo(clrjit)
 
-if (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
+# libnx needs only the target clrjit; cross-target/universal JITs used by
+# crossgen2 on other hosts are not part of this runtime flavor.
+if ((CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64) AND NOT CLR_CMAKE_TARGET_LIBNX)
   create_standalone_jit(TARGET clrjit_universal_arm64_${ARCH_HOST_NAME} OS universal ARCH arm64)
   create_standalone_jit(TARGET clrjit_universal_wasm_${ARCH_HOST_NAME} OS universal ARCH wasm)
   create_standalone_jit(TARGET clrjit_unix_x64_${ARCH_HOST_NAME} OS unix_anyos ARCH x64)
@@ -749,7 +751,9 @@ if (CLR_CMAKE_TARGET_ARCH_LOONGARCH64)
   create_standalone_jit(TARGET clrjit_unix_loongarch64_${ARCH_HOST_NAME} OS unix ARCH loongarch64)
 endif (CLR_CMAKE_TARGET_ARCH_LOONGARCH64)
 
-if (CLR_CMAKE_TARGET_ARCH_RISCV64)
+if (CLR_CMAKE_TARGET_LIBNX)
+  # libnx: no cross-target standalone jits (see above).
+elseif (CLR_CMAKE_TARGET_ARCH_RISCV64)
   create_standalone_jit(TARGET clrjit_unix_riscv64_${ARCH_HOST_NAME} OS unix ARCH riscv64)
 else()
   create_standalone_jit(TARGET clrjit_universal_arm_${ARCH_HOST_NAME} OS universal ARCH arm)
@@ -762,7 +766,7 @@ if (CLR_CMAKE_TARGET_ARCH_I386 AND CLR_CMAKE_TARGET_UNIX)
 endif (CLR_CMAKE_TARGET_ARCH_I386 AND CLR_CMAKE_TARGET_UNIX)
 
 if (CLR_CMAKE_TARGET_UNIX)
-    if (NOT ARCH_TARGET_NAME STREQUAL s390x AND NOT ARCH_TARGET_NAME STREQUAL armv6 AND NOT ARCH_TARGET_NAME STREQUAL ppc64le AND NOT ARCH_TARGET_NAME STREQUAL riscv64 AND NOT ARCH_TARGET_NAME STREQUAL wasm)
+    if (NOT CLR_CMAKE_TARGET_LIBNX AND NOT ARCH_TARGET_NAME STREQUAL s390x AND NOT ARCH_TARGET_NAME STREQUAL armv6 AND NOT ARCH_TARGET_NAME STREQUAL ppc64le AND NOT ARCH_TARGET_NAME STREQUAL riscv64 AND NOT ARCH_TARGET_NAME STREQUAL wasm)
       if(CLR_CMAKE_TARGET_ARCH_ARM OR CLR_CMAKE_TARGET_ARCH_ARM64)
         install_clr(TARGETS clrjit_universal_${ARCH_TARGET_NAME}_${ARCH_HOST_NAME} DESTINATIONS . COMPONENT jit)
       else()

@@ -26,6 +26,8 @@
 
 #include <switch.h>
 
+extern "C" bool minipal_libnx_flush_instruction_cache(void*, size_t);
+
 SET_DEFAULT_DEBUG_CHANNEL(EXCEPT); // some headers have code with asserts, so do this first
 
 // RESERVED_SEH_BIT is defined file-locally in seh.cpp (internal linkage) and
@@ -268,10 +270,15 @@ extern "C" PALIMPORT BOOL PALAPI
 FlushInstructionCache(IN HANDLE hProcess, IN LPCVOID lpBaseAddress, IN SIZE_T dwSize)
 {
     (void)hProcess;
+    if (minipal_libnx_flush_instruction_cache(const_cast<void*>(lpBaseAddress), dwSize))
+        return TRUE;
     __builtin___clear_cache((char*)lpBaseAddress, (char*)lpBaseAddress + dwSize);
     return TRUE;
 }
 
+#if !defined(LINUXNX_MIRROR)
+// Everything in this block overrides/stubs libc functions that glibc already
+// provides; excluded from the linuxnx profiling mirror.
 // PAL references getpwuid_r through PAL_GetUserName-style paths; newlib
 // lacks it, so provide a stub.
 extern "C" int getpwuid_r(uid_t uid, struct passwd *pwd, char *buf, size_t buflen, struct passwd **result)
@@ -405,6 +412,7 @@ extern "C" pid_t waitpid(pid_t pid, int *status, int options)
     errno = ECHILD; // no child processes on libnx
     return -1;
 }
+#endif // !LINUXNX_MIRROR
 
 
 // PAL_ProbeMemory: pal/src/debug/debug.cpp (which provides it on other unixes)
@@ -477,11 +485,24 @@ extern "C" void LibnxStartupLog(const char* stage)
 
 extern "C" void libnx_pal_log_stack(const char* what, void* a, size_t b)
 {
+    // Per-call/per-frame trace from GC crawls, stackwalk and the interpreter
+    // calli path: each line costs an svc + SD fwrite/fflush, which dominated
+    // boot time (GFX LOAD 10+ min on emu). Opt in via NX_TRACE_CALLS=1.
+    static int enabled = -1;
+    if (enabled < 0)
+{
+        const char* e = getenv("NX_TRACE_CALLS");
+        enabled = (e && e[0] == '1') ? 1 : 0;
+}
+    if (!enabled)
+        return;
+
     char buf[128];
     int n = snprintf(buf, sizeof(buf), "palstack: %s %p %zu\n", what, a, b);
-    svcOutputDebugString(buf, n);
+    svcOutputDebugString(buf, (size_t)n);
 }
 
+#if !defined(LINUXNX_MIRROR)
 // fd routing for emulated pipes ------------------------------------------------
 
 #include <reent.h>
@@ -580,6 +601,14 @@ extern "C" ssize_t write(int fd, const void* buf, size_t n)
 
 extern "C" int close(int fd)
 {
+    // Drop any readahead cache slot for this fd (io_shims.c) so a reused fd
+    // can never serve stale data.
+    // NOTE: must be a strong reference — a weak one gets discarded by
+    // --gc-sections (weak undefs don't keep sections alive), silently
+    // disabling invalidation and serving stale data on recycled fds.
+    extern void nx_ra_invalidate(int);
+    nx_ra_invalidate(fd);
+
     if (!nx_is_pipe_fd(fd))
         return _close_r(_REENT, fd);
 
@@ -605,6 +634,7 @@ extern "C" int close(int fd)
     }
     return 0;
 }
+#endif // !LINUXNX_MIRROR
 
 extern "C" void libnx_interp_log(const char* name)
 {
@@ -624,16 +654,5 @@ extern "C" void nx_gc_phase(const char* phase)
 {
     char buf[96];
     int n = snprintf(buf, sizeof(buf), "gc: %s\n", phase);
-    svcOutputDebugString(buf, n);
-}
-
-// Report stack-smash with the faulting function's return address so it can be
-// symbolized offline, instead of newlib's blind abort.
-extern "C" void __stack_chk_fail(void)
-{
-    void* lr = __builtin_return_address(0);
-    char buf[96];
-    int n = snprintf(buf, sizeof(buf), "STACK SMASH in function returning to %p\n", lr);
-    svcOutputDebugString(buf, n);
-    __builtin_trap();
+    svcOutputDebugString(buf, (size_t)n);
 }

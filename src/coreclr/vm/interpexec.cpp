@@ -13,6 +13,7 @@
 #ifdef TARGET_LIBNX
 extern "C" void libnx_interp_log(const char* name);
 extern "C" void libnx_pal_log_stack(const char*, void*, size_t);
+#include "libnx/nxstats.h"
 extern "C" void svcOutputDebugString(const char*, size_t);
 #endif
 #include "frames.h"
@@ -373,7 +374,7 @@ static CallStubHeader *UpdateCallStubForMethod(MethodDesc *pMD, PCODE target)
 
     if (target != (PCODE)NULL)
     {
-#ifdef TARGET_LIBNX
+#if defined(TARGET_LIBNX) && defined(FEATURE_PORTABLE_ENTRYPOINTS)
         // On portable-entrypoint platforms GetMultiCallableAddrOfCode returns the
         // PortableEntryPoint struct address, which is data, not code. Resolve to
         // the actual native entrypoint; on wasm the "call" goes through a wasm
@@ -453,10 +454,15 @@ static NOINLINE CallStubHeader *InvokeManagedMethodHelper(MethodDesc *pMD, PCODE
 
 void InvokeManagedMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet, PCODE target, Object** pContinuationRet)
 {
-#if defined(TARGET_LIBNX) && defined(_DEBUG)
-    // Per-managed-call trace: extremely expensive under emulation (one svc
-    // per call). Bring-up only; Checked/Release must not pay for it.
+#if defined(TARGET_LIBNX) && defined(NX_TRACE_CALLS)
+    // Per-managed-call trace: one svc + SD fwrite/fflush per call — costs
+    // ~an order of magnitude on hardware. Bring-up only, opt in via
+    // -DNX_TRACE_CALLS. NOTE: Checked defines _DEBUG, so _DEBUG is NOT a
+    // sufficient guard (that bug made it into the shipping Checked build).
     libnx_pal_log_stack("invokemgd", (void*)pMD, (size_t)target);
+#endif
+#if defined(TARGET_LIBNX)
+    NXSTAT_SCOPE(&nxstat_invoke_managed_count, &nxstat_invoke_managed_ticks);
 #endif
     CONTRACTL
     {
@@ -584,6 +590,8 @@ void InvokeUnmanagedCalli(PCODE ftn, InterpreterCalliCookie cookie, int8_t *pArg
 void InvokeCalliStub(PCODE ftn, InterpreterCalliCookie cookie, int8_t *pArgs, int8_t *pRet, Object** pContinuationRet)
 {
 #ifdef TARGET_LIBNX
+    NXSTAT_SCOPE(&nxstat_pinvoke_count, &nxstat_pinvoke_ticks);
+#ifdef FEATURE_PORTABLE_ENTRYPOINTS
     // ftn may be a PortableEntryPoint struct address (data, not code); the
     // caller passes it through verbatim. Our call stubs really jump to the
     // target, so resolve to the actual native entrypoint here.
@@ -591,6 +599,7 @@ void InvokeCalliStub(PCODE ftn, InterpreterCalliCookie cookie, int8_t *pArgs, in
     {
         ftn = (PCODE)PortableEntryPoint::GetActualCode(ftn);
     }
+#endif
     libnx_pal_log_stack("callistub", (void*)ftn, (size_t)cookie);
 #endif
     CONTRACTL
@@ -940,7 +949,10 @@ NOINLINE static void InterpThrow(InterpMethodContextFrame* pFrame, const int32_t
 
 // When enabled, each opcode dispatches directly to the next one via an indirect goto,
 // avoiding the overhead of the central switch dispatch.
-#if !defined(TARGET_WINDOWS) && !defined(TARGET_WASM) && !defined(DEBUG)
+// libnx: Checked defines DEBUG but still wants the fast dispatch. (The
+// Release-only crash we once attributed to computed goto was actually a
+// Debug-layout corelib paired with the Release runtime; see notes.)
+#if !defined(TARGET_WINDOWS) && !defined(TARGET_WASM)
 #define USE_COMPUTED_GOTO 1
 #endif
 
@@ -3367,7 +3379,6 @@ SWITCH_OPCODE:
 
                     PCODE calliFunctionPointer = LOCAL_VAR(calliFunctionPointerVar, PCODE);
                     _ASSERTE(calliFunctionPointer);
-
                     if (flags & (int32_t)CalliFlags::PInvoke)
                     {
                         frameNeedsTailcallUpdate = false;

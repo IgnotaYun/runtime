@@ -123,6 +123,15 @@ struct StubPrecode
         return dac_cast<PTR_StubPrecodeData>(dac_cast<TADDR>(this) + GetStubCodePageSize());
     }
 
+#ifndef DACCESS_COMPILE
+    StubPrecodeData* GetWritableData(ExecutableWriterHolder<StubPrecodeData>& writer) const
+    {
+        StubPrecodeData* dataRX = GetData();
+        writer.AssignExecutableWriterHolder(dataRX, sizeof(StubPrecodeData));
+        return writer.GetRW();
+    }
+#endif
+
     TADDR GetMethodDesc();
 
 #ifdef HAS_THISPTR_RETBUF_PRECODE
@@ -138,7 +147,8 @@ struct StubPrecode
     {
         LIMITED_METHOD_CONTRACT;
 
-        GetData()->SecretParam = secretParam;
+        ExecutableWriterHolder<StubPrecodeData> writer;
+        GetWritableData(writer)->SecretParam = secretParam;
     }
 #endif // DACCESS_COMPILE
 
@@ -171,7 +181,8 @@ struct StubPrecode
         }
         CONTRACTL_END;
 
-        StubPrecodeData *pData = GetData();
+        ExecutableWriterHolder<StubPrecodeData> writer;
+        StubPrecodeData *pData = GetWritableData(writer);
         InterlockedExchangeT<PCODE>(&pData->Target, GetPreStubEntryPoint());
     }
 
@@ -184,7 +195,8 @@ struct StubPrecode
         }
         CONTRACTL_END;
 
-        StubPrecodeData *pData = GetData();
+        ExecutableWriterHolder<StubPrecodeData> writer;
+        StubPrecodeData *pData = GetWritableData(writer);
         return InterlockedCompareExchangeT<PCODE>(&pData->Target, (PCODE)target, (PCODE)expected) == expected;
     }
 
@@ -198,7 +210,8 @@ struct StubPrecode
         }
         CONTRACTL_END;
 
-        StubPrecodeData *pData = GetData();
+        ExecutableWriterHolder<StubPrecodeData> writer;
+        StubPrecodeData *pData = GetWritableData(writer);
         pData->Target = (PCODE)target;
     }
 
@@ -417,6 +430,15 @@ struct FixupPrecode
         return dac_cast<PTR_FixupPrecodeData>(dac_cast<TADDR>(this) + GetStubCodePageSize());
     }
 
+#ifndef DACCESS_COMPILE
+    FixupPrecodeData* GetWritableData(ExecutableWriterHolder<FixupPrecodeData>& writer) const
+    {
+        FixupPrecodeData* dataRX = GetData();
+        writer.AssignExecutableWriterHolder(dataRX, sizeof(FixupPrecodeData));
+        return writer.GetRW();
+    }
+#endif
+
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_CONTRACT;
@@ -450,8 +472,10 @@ struct FixupPrecode
 
         PCODE target = (PCODE)this + FixupCodeOffset;
 
-        _ASSERTE(IS_ALIGNED(&GetData()->Target, sizeof(SIZE_T)));
-        InterlockedExchangeT<PCODE>(&GetData()->Target, target);
+        ExecutableWriterHolder<FixupPrecodeData> writer;
+        FixupPrecodeData* data = GetWritableData(writer);
+        _ASSERTE(IS_ALIGNED(&data->Target, sizeof(SIZE_T)));
+        InterlockedExchangeT<PCODE>(&data->Target, target);
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -474,8 +498,10 @@ struct FixupPrecode
 #endif
         }
 
-        _ASSERTE(IS_ALIGNED(&GetData()->Target, sizeof(SIZE_T)));
-        return InterlockedCompareExchangeT<PCODE>(&GetData()->Target, (PCODE)target, (PCODE)oldTarget) == (PCODE)oldTarget;
+        ExecutableWriterHolder<FixupPrecodeData> writer;
+        FixupPrecodeData* data = GetWritableData(writer);
+        _ASSERTE(IS_ALIGNED(&data->Target, sizeof(SIZE_T)));
+        return InterlockedCompareExchangeT<PCODE>(&data->Target, (PCODE)target, (PCODE)oldTarget) == (PCODE)oldTarget;
     }
 #endif
 

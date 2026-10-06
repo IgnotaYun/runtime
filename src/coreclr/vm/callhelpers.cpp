@@ -12,7 +12,7 @@
 #include "invokeutil.h"
 #include "argdestination.h"
 
-#ifdef TARGET_LIBNX
+#if defined(TARGET_LIBNX) && defined(FEATURE_PORTABLE_ENTRYPOINTS)
 bool LibnxCallDescrResolveTarget(CallDescrData* pCallDescrData);
 #endif
 
@@ -55,7 +55,7 @@ void CallDescrWorkerWithHandler(
 
     BEGIN_CALL_TO_MANAGEDEX(fCriticalCall ? EEToManagedCriticalCall : EEToManagedDefault);
 
-#ifdef TARGET_LIBNX
+#if defined(TARGET_LIBNX) && defined(FEATURE_PORTABLE_ENTRYPOINTS)
     // Portable entrypoints are data pointers; resolve them to native code or
     // run the target in the interpreter before the asm worker would jump to data.
     if (!LibnxCallDescrResolveTarget(pCallDescrData))

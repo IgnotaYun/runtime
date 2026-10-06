@@ -5,6 +5,8 @@
 #define LOADERHEAP_SHARED
 
 void ReleaseReservedMemory(BYTE* value);
+BYTE* ReserveLoaderHeapMemory(size_t size, bool executable);
+bool CommitLoaderHeapMemory(void* address, size_t size, bool executable);
 
 struct ReservedMemoryTraits final
 {

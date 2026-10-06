@@ -213,6 +213,10 @@ public:
     // Return the ExecuteAllocator singleton instance
     static ExecutableAllocator* Instance();
 
+    // Return true when the address belongs to a range reserved from this
+    // allocator's double-mapped executable arena.
+    bool Owns(void* pRX);
+
     // Initialize the static members of the Executable allocator and allocate
     // and initialize the instance of it.
     static HRESULT StaticInitialize(FatalErrorHandler fatalErrorHandler);

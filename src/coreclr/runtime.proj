@@ -21,6 +21,18 @@
   <Target Name="BuildRuntime"
           DependsOnTargets="$(BuildRuntimeDependsOnTargets)"
           BeforeTargets="Build">
+    <!-- libnx defaults to an interpreter-only runtime whose build tree does
+         not enable the jit subdirectory. Standalone and integrated JIT builds
+         use scratch subdirectories so the default runtime tree remains
+         interpreter-only. -->
+    <PropertyGroup Condition="'$(ClrJitSubset)' == 'true' and '$(TargetsLibnx)' == 'true'">
+      <BuildSubdirectory>jit</BuildSubdirectory>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(LibnxJitRuntime)' == 'true' and '$(TargetsLibnx)' == 'true'">
+      <BuildSubdirectory>jit-runtime</BuildSubdirectory>
+      <FeatureDynamicCodeCompiled>true</FeatureDynamicCodeCompiled>
+    </PropertyGroup>
+
     <ItemGroup>
       <_CMakeArgs Include="$(CMakeArgs)" />
       <_CoreClrBuildArg Include="@(_CMakeArgs->'-cmakeargs &quot;%(Identity)&quot;')" />
@@ -77,6 +89,8 @@
       <_CoreClrBuildArg Condition="'$(ClrHostsSubset)' == 'true'" Include="-component hosts" />
       <_CoreClrBuildArg Condition="'$(ClrRuntimeSubset)' == 'true'" Include="-component runtime" />
       <_CoreClrBuildArg Condition="'$(ClrJitSubset)' == 'true'" Include="-component jit" />
+      <_CoreClrBuildArg Condition="'$(ClrJitSubset)' == 'true' and '$(TargetsLibnx)' == 'true'" Include="-cmakeargs &quot;-DCLR_LIBNX_BUILD_JIT=1&quot;" />
+      <_CoreClrBuildArg Condition="'$(LibnxJitRuntime)' == 'true' and '$(TargetsLibnx)' == 'true'" Include="-cmakeargs &quot;-DCLR_LIBNX_JIT_RUNTIME=1&quot;" />
       <_CoreClrBuildArg Condition="'$(ClrWasmJitSubset)' == 'true'" Include="-component wasmjit" />
       <_CoreClrBuildArg Condition="'$(ClrPalTestsSubset)' == 'true'" Include="-component paltests" />
       <_CoreClrBuildArg Condition="'$(ClrAllJitsSubset)' == 'true'" Include="-component alljits" />

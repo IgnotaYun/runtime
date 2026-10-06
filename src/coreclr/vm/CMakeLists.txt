@@ -17,13 +17,18 @@ include_directories(${CLR_SRC_NATIVE_DIR}/libs/Common)
 add_definitions(-DUNICODE)
 add_definitions(-D_UNICODE)
 
-if(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_OPENBSD)
+# libnx: the NRO's rodata segment is enforced read-only by svcSetMemoryPermission
+# (hbl/libnx crt0) and our PAL mprotect is a no-op, so the cookie must stay writable.
+if(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_OPENBSD AND NOT CLR_CMAKE_TARGET_LIBNX)
     add_definitions(-DFEATURE_READONLY_GS_COOKIE)
 endif()
 
-if(CLR_CMAKE_TARGET_ANDROID OR CLR_CMAKE_TARGET_OPENBSD)
+if(CLR_CMAKE_TARGET_ANDROID OR CLR_CMAKE_TARGET_OPENBSD OR
+   (CLR_CMAKE_TARGET_LIBNX AND CLR_LIBNX_JIT_RUNTIME))
     # OpenBSD's ld.so cannot resolve native TLS relocations in shared objects and has no
     # __tls_get_addr, so the runtime must use emulated TLS (like Android).
+    # libnx is compiled with -mtp=soft; tpidr_el0 is not its TLS base, so JIT
+    # assembly helpers must call the C soft-TLS accessors instead of reading it.
     add_definitions(-DFEATURE_EMULATED_TLS)
 endif()
 
@@ -284,12 +289,16 @@ if(CLR_CMAKE_TARGET_LIBNX)
     list(APPEND VM_SOURCES_DAC_AND_WKS_COMMON
         dactable-libnx.cpp
         libnx/portabilitystubs.cpp
-        libnx/reversethunks.cpp
-        libnx/calldescrlibnx.cpp
-        wasm/wasi/callhelpers-reverse.cpp
     )
-    # callhelpers-reverse.cpp does #include <callhelpers.hpp> from vm/wasm.
-    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/wasm)
+    if(FEATURE_PORTABLE_ENTRYPOINTS)
+        list(APPEND VM_SOURCES_DAC_AND_WKS_COMMON
+            libnx/reversethunks.cpp
+            libnx/calldescrlibnx.cpp
+            wasm/wasi/callhelpers-reverse.cpp
+        )
+        # callhelpers-reverse.cpp includes callhelpers.hpp from vm/wasm.
+        include_directories(${CMAKE_CURRENT_SOURCE_DIR}/wasm)
+    endif()
 endif()
 list(APPEND VM_HEADERS_DAC_AND_WKS_COMMON
     pregeneratedstringthunks.h

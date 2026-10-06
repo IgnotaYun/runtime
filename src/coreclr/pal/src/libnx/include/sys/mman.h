@@ -7,6 +7,12 @@
 #include <stddef.h>
 #include <sys/types.h>
 
+#if defined(__linux__)
+// linuxnx profiling mirror: use the real glibc declarations; nx_mmap.c still
+// provides the (fake-mmap) definitions so we profile the same code paths.
+#include_next <sys/mman.h>
+#else
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -34,6 +40,16 @@ int   madvise(void* addr, size_t length, int advice);
 
 #define POSIX_MADV_DONTNEED 4
 int   posix_madvise(void* addr, size_t length, int advice);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // __linux__
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Host-side initialization: reserves [memory_start, memory_end) for fake-mmap
 // allocations. Must be called before coreclr_initialize.

@@ -360,7 +360,11 @@ if (CLR_CMAKE_BUILD_TOOLS)
 endif(CLR_CMAKE_BUILD_TOOLS)
 add_subdirectory(gcinfo)
 
-if (NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX)
+# libnx defaults to an interpreter-only runtime, so the JIT tree is opt-in.
+# Standalone and integrated JIT builds use separate object directories and
+# explicitly register the JIT targets here.
+if ((NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_TARGET_LIBNX) OR
+    (CLR_CMAKE_TARGET_LIBNX AND (CLR_LIBNX_BUILD_JIT OR CLR_LIBNX_JIT_RUNTIME)))
   add_subdirectory(jit)
 endif()
 

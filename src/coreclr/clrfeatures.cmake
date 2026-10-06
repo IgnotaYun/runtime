@@ -92,13 +92,29 @@ if(NOT DEFINED FEATURE_INTERPRETER)
 endif()
 
 if(CLR_CMAKE_TARGET_LIBNX)
-  # libnx (Nintendo Switch homebrew): interpreter-only, statically linked,
-  # no JIT (no RWX memory), no signals -> cooperative thread suspension only.
+  # libnx (Nintendo Switch homebrew): statically linked, no signals ->
+  # cooperative thread suspension only. The proven default remains the
+  # interpreter. CLR_LIBNX_JIT_RUNTIME selects the normal CoreCLR JIT instead;
+  # executable memory is backed by libnx CodeMemory with distinct simultaneous
+  # RW/RX aliases.
   set(FEATURE_STATICALLY_LINKED 1)
   set(FEATURE_INTERPRETER 1)
   set(FEATURE_PORTABLE_ENTRYPOINTS 1)
   set(FEATURE_PORTABLE_HELPERS 1)
   set(FEATURE_INPROC_CRASHREPORT 0)
+  if(CLR_LIBNX_JIT_RUNTIME)
+    set(FEATURE_DYNAMIC_CODE_COMPILED 1)
+    # clrjit and clrinterpreter export the same static getJit/jitStartup API.
+    # Linking both makes compiler selection depend on archive member order.
+    set(FEATURE_INTERPRETER 0)
+    set(FEATURE_PORTABLE_ENTRYPOINTS 0)
+    set(FEATURE_PORTABLE_HELPERS 0)
+    # Start with one optimizing tier to reduce code-heap churn and patching
+    # surface during initial hardware bring-up.
+    set(FEATURE_TIERED_COMPILATION 0)
+    set(FEATURE_REJIT 0)
+    set(FEATURE_PGO 0)
+  endif()
 endif(CLR_CMAKE_TARGET_LIBNX)
 
 if(NOT DEFINED FEATURE_STANDALONE_GC)

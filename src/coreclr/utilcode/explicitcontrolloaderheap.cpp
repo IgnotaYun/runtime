@@ -94,7 +94,7 @@ ExplicitControlLoaderHeap::~ExplicitControlLoaderHeap()
 
         if (fReleaseMemory)
         {
-            ExecutableAllocator::Instance()->Release(pVirtualAddress);
+            ReleaseReservedMemory((BYTE*)pVirtualAddress);
         }
 
         delete pSearch;
@@ -102,7 +102,7 @@ ExplicitControlLoaderHeap::~ExplicitControlLoaderHeap()
 
     if (m_reservedBlock.m_fReleaseMemory)
     {
-        ExecutableAllocator::Instance()->Release(m_reservedBlock.pVirtualAddress);
+        ReleaseReservedMemory((BYTE*)m_reservedBlock.pVirtualAddress);
     }
 
     INDEBUG(s_dwNumInstancesOfLoaderHeaps --;)
@@ -142,8 +142,7 @@ size_t ExplicitControlLoaderHeap::GetBytesAvailReservedRegion()
 BOOL ExplicitControlLoaderHeap::CommitPages(void* pData, size_t dwSizeToCommitPart)
 {
     // Commit first set of pages, since it will contain the LoaderHeapBlock
-    void *pTemp = ExecutableAllocator::Instance()->Commit(pData, dwSizeToCommitPart, m_fExecutableHeap ? TRUE : FALSE);
-    if (pTemp == NULL)
+    if (!CommitLoaderHeapMemory(pData, dwSizeToCommitPart, m_fExecutableHeap))
     {
         return FALSE;
     }

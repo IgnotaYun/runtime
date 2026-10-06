@@ -148,10 +148,20 @@ if (CLR_CMAKE_TARGET_LIBNX)
   list(APPEND PLATFORM_SOURCES
     arch/${PAL_ARCH_SOURCES_DIR}/libnxstubs.cpp
     libnx/nx_mmap.c
-    libnx/nx_dlfcn.c
   )
+  if (NOT DEFINED PAL_LIBNX_SHIM_DIR)
+    # linuxnx profiling mirror keeps glibc's real dlopen/dladdr/dlvsym.
+    list(APPEND PLATFORM_SOURCES
+      libnx/nx_dlfcn.c
+    )
+  endif()
   # Shim headers: sys/mman.h, dlfcn.h
   include_directories(BEFORE libnx/include)
+  # Linux profiling mirror (linuxnx): pull in the libnx API shim.
+  if (DEFINED PAL_LIBNX_SHIM_DIR)
+    list(APPEND PLATFORM_SOURCES ${PAL_LIBNX_SHIM_DIR}/src/switch_shim.c)
+    include_directories(BEFORE ${PAL_LIBNX_SHIM_DIR}/include)
+  endif()
 endif()
 
 if(CLR_CMAKE_HOST_ARCH_ARM)

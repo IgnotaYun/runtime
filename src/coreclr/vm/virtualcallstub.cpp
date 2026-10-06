@@ -4,6 +4,7 @@
 // This file contains the virtual call stub manager and caches
 
 #include "common.h"
+#include "../utilcode/loaderheap_shared.h"
 #include "array.h"
 #include "CachedInterfaceDispatchPal.h"
 #include "CachedInterfaceDispatch.h"
@@ -519,6 +520,20 @@ void VirtualCallStubManager::Init(LoaderAllocator *pLoaderAllocator)
 
     BYTE * initReservedMem = NULL;
 
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+    // These heaps contain writable indirection/cache data, not code. They
+    // cannot share the canonical RX address space of the CodeMemory arena.
+    DWORD totalDataSize = indcell_heap_reserve_size
+#ifdef FEATURE_VIRTUAL_STUB_DISPATCH
+                        + cache_entry_heap_reserve_size
+#endif
+                        ;
+    totalDataSize = (DWORD)ALIGN_UP(totalDataSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
+    initReservedMem = ReserveLoaderHeapMemory(totalDataSize, false);
+    m_initialReservedMemForHeaps = initReservedMem;
+    if (initReservedMem == NULL)
+        COMPlusThrowOM();
+#else
     if (!m_loaderAllocator->IsCollectible())
     {
         DWORD dwTotalReserveMemSizeCalc  = indcell_heap_reserve_size
@@ -595,6 +610,7 @@ void VirtualCallStubManager::Init(LoaderAllocator *pLoaderAllocator)
         if (initReservedMem == NULL)
             COMPlusThrowOM();
     }
+#endif
 
     // Hot  memory, Writable, No-Execute, infrequent writes
     RangeList* pIndCellRangeList = NULL;
@@ -761,9 +777,16 @@ VirtualCallStubManager::~VirtualCallStubManager()
     }
 
     // This was the block reserved by Init for the heaps.
-    // For the collectible case, the VSD logic does not allocate the memory.
-    if (m_initialReservedMemForHeaps && !m_loaderAllocator->IsCollectible())
-        ClrVirtualFree (m_initialReservedMemForHeaps, 0, MEM_RELEASE);
+    // Upstream collectible VSD memory belongs to LoaderAllocator. The libnx
+    // JIT path allocates an independent RW block here for both allocator kinds.
+    if (m_initialReservedMemForHeaps &&
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+        true
+#else
+        !m_loaderAllocator->IsCollectible()
+#endif
+        )
+        ReleaseReservedMemory(m_initialReservedMemForHeaps);
 
     // Free critical section
     m_indCellLock.Destroy();

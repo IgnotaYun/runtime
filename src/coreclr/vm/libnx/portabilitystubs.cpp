@@ -35,6 +35,8 @@ void FuncEvalFrame::UpdateRegDisplay_Impl(const PREGDISPLAY pRD, bool updateFloa
 
 // --- Portable thunk helpers (wasm-only upstream) -----------------------------
 
+#ifdef FEATURE_PORTABLE_ENTRYPOINTS
+
 void* GetPortableEntryPointToInterpreterThunk(MethodDesc *pMD)
 {
     // No pregenerated thunks on libnx; callers treat nullptr as "not available".
@@ -57,3 +59,4 @@ extern "C" PCODE TheUMEntryPrestubWorker(UMEntryThunkData* pUMEntryThunkData)
     LIBNX_PORTABILITY_ASSERT("TheUMEntryPrestubWorker is not implemented on libnx");
     return 0;
 }
+#endif // FEATURE_PORTABLE_ENTRYPOINTS

@@ -3,6 +3,7 @@
 
 
 #include "common.h"
+#include "../utilcode/loaderheap_shared.h"
 #include "stringliteralmap.h"
 #include "virtualcallstub.h"
 #include "threadsuspend.h"
@@ -1162,6 +1163,50 @@ void LoaderAllocator::Init(BYTE *pExecutableHeapMemory)
 
     dwTotalReserveMemSize = (DWORD) ALIGN_UP(dwTotalReserveMemSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
 
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+    // A single reservation cannot mix ordinary RW loader data with executable
+    // pages when CodeMemory exposes distinct permanent RW/RX aliases. Let each
+    // heap reserve from the appropriate allocator on first use instead.
+    m_InitialReservedMemForLoaderHeaps = NULL;
+    m_pCodeHeapInitialAlloc = NULL;
+    m_pVSDHeapInitialAlloc = NULL;
+
+    if (dwLowFrequencyHeapReserveSize != 0)
+    {
+        _ASSERTE(!IsCollectible());
+        m_pLowFrequencyHeap = new (&m_LowFreqHeapInstance) LoaderHeap(
+            LOW_FREQUENCY_HEAP_RESERVE_SIZE,
+            LOW_FREQUENCY_HEAP_COMMIT_SIZE);
+    }
+
+    if (dwExecutableHeapReserveSize != 0)
+    {
+        _ASSERTE(!IsCollectible());
+        m_pExecutableHeap = new (pExecutableHeapMemory) LoaderHeap(
+            EXECUTABLE_HEAP_RESERVE_SIZE,
+            EXECUTABLE_HEAP_COMMIT_SIZE,
+            NULL,
+            LoaderHeapImplementationKind::Executable);
+    }
+
+    m_pHighFrequencyHeap = new (&m_HighFreqHeapInstance) LoaderHeap(
+        HIGH_FREQUENCY_HEAP_RESERVE_SIZE,
+        HIGH_FREQUENCY_HEAP_COMMIT_SIZE);
+
+    if (IsCollectible())
+        m_pLowFrequencyHeap = m_pHighFrequencyHeap;
+
+    if (dwStaticsHeapReserveSize != 0)
+    {
+        m_pStaticsHeap = new (&m_StaticsHeapInstance) LoaderHeap(
+            STATIC_FIELD_HEAP_RESERVE_SIZE,
+            STATIC_FIELD_HEAP_COMMIT_SIZE);
+    }
+    else
+    {
+        m_pStaticsHeap = m_pHighFrequencyHeap;
+    }
+#else
     BYTE * initReservedMem = (BYTE*)ExecutableAllocator::Instance()->Reserve(dwTotalReserveMemSize);
 
     m_InitialReservedMemForLoaderHeaps = initReservedMem;
@@ -1229,6 +1274,7 @@ void LoaderAllocator::Init(BYTE *pExecutableHeapMemory)
         _ASSERTE(m_pHighFrequencyHeap != NULL);
         m_pStaticsHeap = m_pHighFrequencyHeap;
     }
+#endif
 
 #ifndef FEATURE_PORTABLE_ENTRYPOINTS
     m_pNewStubPrecodeHeap = new (&m_NewStubPrecodeHeapInstance) InterleavedLoaderHeap(
@@ -1480,7 +1526,7 @@ void LoaderAllocator::Terminate()
 
     if (m_InitialReservedMemForLoaderHeaps)
     {
-        ExecutableAllocator::Instance()->Release(m_InitialReservedMemForLoaderHeaps);
+        ReleaseReservedMemory(m_InitialReservedMemForLoaderHeaps);
         m_InitialReservedMemForLoaderHeaps=NULL;
     }
 

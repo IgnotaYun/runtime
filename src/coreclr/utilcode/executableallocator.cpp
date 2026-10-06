@@ -229,6 +229,22 @@ ExecutableAllocator* ExecutableAllocator::Instance()
     return g_instance;
 }
 
+bool ExecutableAllocator::Owns(void* pRX)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    if (!IsDoubleMappingEnabled() || pRX == NULL)
+        return false;
+
+    CRITSEC_Holder csh(m_CriticalSection);
+    for (BlockRX* block = m_pFirstBlockRX; block != NULL; block = block->next)
+    {
+        if (pRX >= block->baseRX && pRX < static_cast<void*>(static_cast<BYTE*>(block->baseRX) + block->size))
+            return true;
+    }
+    return false;
+}
+
 ExecutableAllocator::~ExecutableAllocator()
 {
     if (IsDoubleMappingEnabled())
@@ -261,7 +277,13 @@ HRESULT ExecutableAllocator::StaticInitialize(FatalErrorHandler fatalErrorHandle
 #endif
 
     g_fatalErrorHandler = fatalErrorHandler;
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+    // Horizon enforces W^X. The libnx double mapper uses CodeMemory with
+    // simultaneous distinct RW/RX aliases; never fall back to fake RWX.
+    g_isWXorXEnabled = true;
+#else
     g_isWXorXEnabled = Configuration::GetKnobBooleanValue(W("System.Runtime.EnableWriteXorExecute"), CLRConfig::EXTERNAL_EnableWriteXorExecute);
+#endif
     g_instance = new (nothrow) ExecutableAllocator();
     if (g_instance == NULL)
     {
@@ -287,8 +309,15 @@ bool ExecutableAllocator::Initialize()
     {
         if (!VMToOSInterface::CreateDoubleMemoryMapper(&m_doubleMemoryMapperHandle, &m_maxExecutableCodeSize))
         {
+#if defined(TARGET_LIBNX) && defined(FEATURE_DYNAMIC_CODE_COMPILED)
+            // Horizon cannot execute writable mappings. Falling back to the
+            // generic single RWX mapping would defer this failure until the
+            // first generated stub or method executes.
+            return false;
+#else
             g_isWXorXEnabled = false;
             return true;
+#endif
         }
 
         m_CriticalSection = ClrCreateCriticalSection(CrstExecutableAllocatorLock,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
@@ -872,6 +901,38 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size, CacheableMapping cacheM
         return pRX;
     }
 
+#if defined(TARGET_LIBNX)
+    {
+        // CodeMemory exposes one process-lifetime RW alias for the whole arena.
+        // Repeated and overlapping translations therefore cannot use the
+        // generic BlockRW cache, whose entries represent independently mapped
+        // and unmap-able virtual ranges.
+        (void)cacheMapping;
+        CRITSEC_Holder csh(m_CriticalSection);
+        BYTE* address = static_cast<BYTE*>(pRX);
+
+        for (BlockRX* block = m_pFirstBlockRX; block != NULL; block = block->next)
+        {
+            BYTE* blockBase = static_cast<BYTE*>(block->baseRX);
+            if (address >= blockBase)
+            {
+                size_t rangeOffset = static_cast<size_t>(address - blockBase);
+                if (size <= block->size && rangeOffset <= block->size - size)
+                {
+                    return VMToOSInterface::GetRWMapping(
+                        m_doubleMemoryMapperHandle,
+                        pRX,
+                        block->offset + rangeOffset,
+                        size);
+                }
+            }
+        }
+
+        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RX block to translate to the permanent RW alias was not found"));
+        return NULL;
+    }
+#endif
+
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
     StopWatch swAll(&g_mapTimeWithLockSum);
 #endif
@@ -960,6 +1021,12 @@ void ExecutableAllocator::UnmapRW(void* pRW)
     {
         return;
     }
+
+#if defined(TARGET_LIBNX)
+    // MapRW only translated this address into the arena's permanent RW alias.
+    (void)pRW;
+    return;
+#endif
 
     CRITSEC_Holder csh(m_CriticalSection);
     _ASSERTE(pRW != NULL);

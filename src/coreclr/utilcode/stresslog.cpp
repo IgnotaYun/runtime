@@ -769,6 +769,11 @@ FORCEINLINE void ThreadStressLog::LogMsg(unsigned facility, int cArgs, const cha
 
     if (offs > StressMsg::maxOffset)
     {
+#if defined(TARGET_LIBNX)
+        // AddModule() is a no-op on libnx (no module table), so every format
+        // pointer lands here. DebugBreak would be spurious; just pin offs.
+        offs = 0;
+#else
         // This string is at a location that is too far away from the base address of the module set.
         // We can handle up to 68GB of native modules registered in the stresslog (like the runtime or GC).
         // Managed assemblies cannot write to the stresslog.
@@ -776,6 +781,7 @@ FORCEINLINE void ThreadStressLog::LogMsg(unsigned facility, int cArgs, const cha
         // in the module.
         DebugBreak();
         offs = 0;
+#endif
     }
 
     // Get next available slot

@@ -160,7 +160,8 @@ endif(FEATURE_STATICALLY_LINKED)
 
 if(FEATURE_DYNAMIC_CODE_COMPILED)
     set(CORECLR_STATIC_CLRJIT_STATIC clrjit_static)
-elseif(FEATURE_INTERPRETER)
+endif()
+if(FEATURE_INTERPRETER)
     set(CORECLR_STATIC_CLRINTERPRETER_STATIC clrinterpreter_objects dn-containers gcinfo)
 endif()
 
