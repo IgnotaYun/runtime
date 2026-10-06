@@ -105,7 +105,9 @@ namespace
         const ReverseThunkMapEntry* entry = table->Lookup(key);
         if (entry == nullptr)
             entry = LibnxLookupExtraThunk(source.GetUTF8());
+#ifdef NX_TRACE_CALLS
         libnx_revthunk_log(source.GetUTF8(), entry != nullptr);
+#endif
         return entry != nullptr ? &entry->value : nullptr;
     }
 }
@@ -176,23 +178,49 @@ void* GetUnmanagedCallersOnlyThunk(MethodDesc* pMD)
 // ---------------------------------------------------------------------------
 // Marshal.GetFunctionPointerForDelegate support.
 //
-// On portable-entrypoint platforms there is no runtime code generation, so
-// UMEntryThunks cannot exist. libnx instead hands out one of a fixed pool of
-// precompiled native thunks for the simple delegate shapes native libraries
-// actually request (currently: void(void*) callbacks, e.g. FNA3D_LogFunc).
-// The thunk indexes into a slot table holding a strong handle to the delegate.
+// CoreCLR's normal UMEntryThunk path is unavailable on portable-entrypoint
+// platforms. libnx provides CodeMemory with simultaneous RW/RX aliases, so
+// emit a small AArch64 thunk that supplies a stable per-delegate context to a
+// shared interpreter dispatcher while preserving the native x0..x3 arguments.
 
 #include "interpexec.h"
 #include "comdelegate.h"
+extern "C"
+{
+#include <switch/result.h>
+#include <switch/kernel/jit.h>
+#include <switch/arm/cache.h>
+}
 
 namespace
 {
-    constexpr int kDelegateThunkCount = 16;
-    OBJECTHANDLE g_delegateThunkTargets[kDelegateThunkCount] = {0};
-    MethodDesc* g_delegateThunkInvoke[kDelegateThunkCount] = {0};
-    int g_delegateThunkAlloc = 0;
+    struct DelegateThunkContext
+    {
+        OBJECTHANDLE Target;
+        MethodDesc* Invoke;
+        void* EntryPoint;
+        DelegateThunkContext* Next;
+    };
 
-    int64_t LibnxDelegateThunkDispatch(int slot, int64_t a0, int64_t a1, int64_t a2, int64_t a3)
+    struct DelegateThunkPage
+    {
+        Jit Code;
+        size_t Used;
+        DelegateThunkPage* Next;
+    };
+
+    constexpr size_t kDelegateThunkSize = 32;
+    constexpr size_t kDelegateThunkPageSize = 0x1000;
+    DelegateThunkContext* g_delegateThunks = nullptr;
+    DelegateThunkPage* g_delegateThunkPages = nullptr;
+    DangerousNonHostedSpinLock g_delegateThunkLock;
+
+    extern "C" int64_t LibnxDelegateThunkDispatch(
+        int64_t a0,
+        int64_t a1,
+        int64_t a2,
+        int64_t a3,
+        DelegateThunkContext* context)
     {
         CONTRACTL
         {
@@ -202,7 +230,7 @@ namespace
         }
         CONTRACTL_END;
 
-        OBJECTHANDLE h = g_delegateThunkTargets[slot];
+        OBJECTHANDLE h = context->Target;
         _ASSERTE(h != NULL);
 
         if (GetThreadNULLOk() == NULL)
@@ -229,7 +257,7 @@ namespace
             PCODE pc = d->GetMethodPtrAux() != (PCODE)0 ? d->GetMethodPtrAux() : d->GetMethodPtr();
             md = PortableEntryPoint::GetMethodDesc(pc);
             _ASSERTE(md != NULL);
-            pInvoke = g_delegateThunkInvoke[slot];
+            pInvoke = context->Invoke;
         }
 
         int64_t args[5];
@@ -262,69 +290,62 @@ namespace
             returnsVoid ? nullptr : (int8_t*)&ret, (PCODE)&LibnxDelegateThunkDispatch);
         return ret;
     }
+
+    void* AllocateDelegateThunk(DelegateThunkContext* context)
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        DelegateThunkPage* page = g_delegateThunkPages;
+        if (page == nullptr || page->Used + kDelegateThunkSize > page->Code.size)
+        {
+            page = new (nothrow) DelegateThunkPage{};
+            if (page == nullptr)
+                return nullptr;
+
+            Result rc = jitCreate(&page->Code, kDelegateThunkPageSize);
+            if (R_FAILED(rc) || page->Code.type != JitType_CodeMemory)
+            {
+                if (R_SUCCEEDED(rc))
+                    jitClose(&page->Code);
+                delete page;
+                return nullptr;
+            }
+
+            page->Next = g_delegateThunkPages;
+            g_delegateThunkPages = page;
+        }
+
+        uint8_t* rw = static_cast<uint8_t*>(jitGetRwAddr(&page->Code)) + page->Used;
+        uint8_t* rx = static_cast<uint8_t*>(jitGetRxAddr(&page->Code)) + page->Used;
+
+        // ldr x4, [pc, #16]       ; per-delegate context
+        // ldr x16, [pc, #20]      ; shared dispatcher
+        // br  x16
+        // nop
+        // .quad context
+        // .quad dispatcher
+        const uint32_t instructions[4] = {
+            0x58000084u,
+            0x580000B0u,
+            0xD61F0200u,
+            0xD503201Fu,
+        };
+        memcpy(rw, instructions, sizeof(instructions));
+        const uint64_t literals[2] = {
+            reinterpret_cast<uint64_t>(context),
+            reinterpret_cast<uint64_t>(&LibnxDelegateThunkDispatch),
+        };
+        memcpy(rw + sizeof(instructions), literals, sizeof(literals));
+
+        armDCacheFlush(rw, kDelegateThunkSize);
+        armICacheInvalidate(rx, kDelegateThunkSize);
+        page->Used += kDelegateThunkSize;
+        return rx;
+    }
 }
 
-// One thunk per slot and arity: the slot index must be a compile-time
-// constant. All thunks return int64 in x0, which is ABI-compatible with the
-// void/i4/u4/pointer returns native callers actually use.
-#define LIBNX_DELEGATE_THUNK(i) \
-    extern "C" int64_t LibnxDelegateThunk##i(void* a0) { return LibnxDelegateThunkDispatch(i, (int64_t)a0, 0, 0, 0); }
-
-LIBNX_DELEGATE_THUNK(0)  LIBNX_DELEGATE_THUNK(1)  LIBNX_DELEGATE_THUNK(2)  LIBNX_DELEGATE_THUNK(3)
-LIBNX_DELEGATE_THUNK(4)  LIBNX_DELEGATE_THUNK(5)  LIBNX_DELEGATE_THUNK(6)  LIBNX_DELEGATE_THUNK(7)
-LIBNX_DELEGATE_THUNK(8)  LIBNX_DELEGATE_THUNK(9)  LIBNX_DELEGATE_THUNK(10) LIBNX_DELEGATE_THUNK(11)
-LIBNX_DELEGATE_THUNK(12) LIBNX_DELEGATE_THUNK(13) LIBNX_DELEGATE_THUNK(14) LIBNX_DELEGATE_THUNK(15)
-
-#define LIBNX_DELEGATE_THUNK_A2(i) \
-    extern "C" int64_t LibnxDelegateThunkA2_##i(void* a0, int64_t a1) { return LibnxDelegateThunkDispatch(i, (int64_t)a0, a1, 0, 0); }
-#define LIBNX_DELEGATE_THUNK_A3(i) \
-    extern "C" int64_t LibnxDelegateThunkA3_##i(void* a0, void* a1, int64_t a2) { return LibnxDelegateThunkDispatch(i, (int64_t)a0, (int64_t)a1, a2, 0); }
-
-LIBNX_DELEGATE_THUNK_A2(0)  LIBNX_DELEGATE_THUNK_A2(1)  LIBNX_DELEGATE_THUNK_A2(2)  LIBNX_DELEGATE_THUNK_A2(3)
-LIBNX_DELEGATE_THUNK_A2(4)  LIBNX_DELEGATE_THUNK_A2(5)  LIBNX_DELEGATE_THUNK_A2(6)  LIBNX_DELEGATE_THUNK_A2(7)
-LIBNX_DELEGATE_THUNK_A2(8)  LIBNX_DELEGATE_THUNK_A2(9)  LIBNX_DELEGATE_THUNK_A2(10) LIBNX_DELEGATE_THUNK_A2(11)
-LIBNX_DELEGATE_THUNK_A2(12) LIBNX_DELEGATE_THUNK_A2(13) LIBNX_DELEGATE_THUNK_A2(14) LIBNX_DELEGATE_THUNK_A2(15)
-
-LIBNX_DELEGATE_THUNK_A3(0)  LIBNX_DELEGATE_THUNK_A3(1)  LIBNX_DELEGATE_THUNK_A3(2)  LIBNX_DELEGATE_THUNK_A3(3)
-LIBNX_DELEGATE_THUNK_A3(4)  LIBNX_DELEGATE_THUNK_A3(5)  LIBNX_DELEGATE_THUNK_A3(6)  LIBNX_DELEGATE_THUNK_A3(7)
-LIBNX_DELEGATE_THUNK_A3(8)  LIBNX_DELEGATE_THUNK_A3(9)  LIBNX_DELEGATE_THUNK_A3(10) LIBNX_DELEGATE_THUNK_A3(11)
-LIBNX_DELEGATE_THUNK_A3(12) LIBNX_DELEGATE_THUNK_A3(13) LIBNX_DELEGATE_THUNK_A3(14) LIBNX_DELEGATE_THUNK_A3(15)
-
-static void* const g_delegateThunksA1[kDelegateThunkCount] = {
-    (void*)&LibnxDelegateThunk0,  (void*)&LibnxDelegateThunk1,
-    (void*)&LibnxDelegateThunk2,  (void*)&LibnxDelegateThunk3,
-    (void*)&LibnxDelegateThunk4,  (void*)&LibnxDelegateThunk5,
-    (void*)&LibnxDelegateThunk6,  (void*)&LibnxDelegateThunk7,
-    (void*)&LibnxDelegateThunk8,  (void*)&LibnxDelegateThunk9,
-    (void*)&LibnxDelegateThunk10, (void*)&LibnxDelegateThunk11,
-    (void*)&LibnxDelegateThunk12, (void*)&LibnxDelegateThunk13,
-    (void*)&LibnxDelegateThunk14, (void*)&LibnxDelegateThunk15,
-};
-
-static void* const g_delegateThunksA2[kDelegateThunkCount] = {
-    (void*)&LibnxDelegateThunkA2_0,  (void*)&LibnxDelegateThunkA2_1,
-    (void*)&LibnxDelegateThunkA2_2,  (void*)&LibnxDelegateThunkA2_3,
-    (void*)&LibnxDelegateThunkA2_4,  (void*)&LibnxDelegateThunkA2_5,
-    (void*)&LibnxDelegateThunkA2_6,  (void*)&LibnxDelegateThunkA2_7,
-    (void*)&LibnxDelegateThunkA2_8,  (void*)&LibnxDelegateThunkA2_9,
-    (void*)&LibnxDelegateThunkA2_10, (void*)&LibnxDelegateThunkA2_11,
-    (void*)&LibnxDelegateThunkA2_12, (void*)&LibnxDelegateThunkA2_13,
-    (void*)&LibnxDelegateThunkA2_14, (void*)&LibnxDelegateThunkA2_15,
-};
-
-static void* const g_delegateThunksA3[kDelegateThunkCount] = {
-    (void*)&LibnxDelegateThunkA3_0,  (void*)&LibnxDelegateThunkA3_1,
-    (void*)&LibnxDelegateThunkA3_2,  (void*)&LibnxDelegateThunkA3_3,
-    (void*)&LibnxDelegateThunkA3_4,  (void*)&LibnxDelegateThunkA3_5,
-    (void*)&LibnxDelegateThunkA3_6,  (void*)&LibnxDelegateThunkA3_7,
-    (void*)&LibnxDelegateThunkA3_8,  (void*)&LibnxDelegateThunkA3_9,
-    (void*)&LibnxDelegateThunkA3_10, (void*)&LibnxDelegateThunkA3_11,
-    (void*)&LibnxDelegateThunkA3_12, (void*)&LibnxDelegateThunkA3_13,
-    (void*)&LibnxDelegateThunkA3_14, (void*)&LibnxDelegateThunkA3_15,
-};
-
 // Returns a native function pointer that invokes the delegate, or NULL if the
-// delegate shape is not supported by the pool.
+// delegate shape is not supported by the interpreter dispatcher.
 extern "C" void* LibnxGetDelegateCallback(OBJECTREF delegateObj)
 {
     CONTRACTL
@@ -347,9 +368,10 @@ extern "C" void* LibnxGetDelegateCallback(OBJECTREF delegateObj)
     MethodDesc* pInvokeMeth = COMDelegate::FindDelegateInvokeMethod(pMT);
     MetaSig sig(pInvokeMeth);
 
-    // Supported shapes: up to 3 pointer-sized scalar arguments, void or
+    // Supported shapes: up to 4 pointer-sized scalar arguments, void or
     // pointer-sized integer return. Covers FNA3D log callbacks and the
-    // FNA3D_Image_Load read/skip/eof stream callbacks.
+    // FNA3D_Image_Load read/skip/eof stream callbacks. Floating-point and
+    // aggregate ABI shapes require a signature-aware dispatcher.
     if (sig.IsReturnTypeVoid() == FALSE)
     {
         CorElementType retEt = sig.GetReturnType();
@@ -375,7 +397,7 @@ extern "C" void* LibnxGetDelegateCallback(OBJECTREF delegateObj)
         }
     }
     UINT numArgs = sig.NumFixedArgs();
-    if (numArgs > 3)
+    if (numArgs > 4)
     {
         svcOutputDebugString("libnx: delegate cb: too many args\n", 39);
         return NULL;
@@ -397,63 +419,53 @@ extern "C" void* LibnxGetDelegateCallback(OBJECTREF delegateObj)
         default:
         {
             char nb[96];
-            int nn = snprintf(nb, sizeof(nb), "libnx: delegate cb: unsupported arg type %d\n", (int)et);
+            LPCUTF8 ns, nm;
+            pMT->GetMDImport()->GetNameOfTypeDef(pMT->GetTypeDefRid(), &nm, &ns);
+            int nn = snprintf(nb, sizeof(nb), "libnx: delegate cb: unsupported arg type %d (delegate %s.%s)\n", (int)et, ns ? ns : "?", nm ? nm : "?");
             svcOutputDebugString(nb, nn);
             return NULL;
         }
         }
     }
 
-    // Weak handles so that slots for short-lived delegates (e.g. per-texture
-    // FNA3D_Image_Load callbacks) are reclaimed after collection and reused;
-    // long-lived callbacks (loggers) stay rooted by their callers as the
-    // GetFunctionPointerForDelegate contract requires.
-    int slot = -1;
-    // Dedup: marshalling the same delegate object again must return the same
-    // thunk instead of leaking a slot. PInvoke stubs call this every time the
-    // PInvoke runs (e.g. FNA's static read/skip/eof delegates once per
-    // texture); without dedup the pool exhausts after a handful of calls.
-    Object* pDelegateRaw = OBJECTREFToObject(delegateObj);
-    for (int i = 0; i < g_delegateThunkAlloc && i < kDelegateThunkCount; i++)
+    // The native pointer is stable for process lifetime. The handle is weak:
+    // Marshal.GetFunctionPointerForDelegate requires the caller to keep the
+    // delegate alive for as long as native code can call the pointer.
+    DelegateThunkContext* context = new (nothrow) DelegateThunkContext{};
+    if (context == nullptr)
+        return nullptr;
+
+    context->Target = CreateWeakHandle(GetAppDomain()->GetHandleStore(), delegateObj);
+    if (context->Target == NULL)
     {
-        if (g_delegateThunkTargets[i] != NULL &&
-            OBJECTREFToObject(ObjectFromHandle(g_delegateThunkTargets[i])) == pDelegateRaw)
-        {
-            slot = i;
-            break;
-        }
-    }
-    if (slot >= 0)
-    {
-        if (numArgs == 3)
-            return g_delegateThunksA3[slot];
-        if (numArgs == 2)
-            return g_delegateThunksA2[slot];
-        return g_delegateThunksA1[slot];
-    }
-    for (int i = 0; i < g_delegateThunkAlloc; i++)
-    {
-        if (g_delegateThunkTargets[i] != NULL && ObjectFromHandle(g_delegateThunkTargets[i]) == NULL)
-        {
-            DestroyWeakHandle(g_delegateThunkTargets[i]);
-            g_delegateThunkTargets[i] = NULL;
-            slot = i;
-            break;
-        }
-    }
-    if (slot < 0)
-        slot = InterlockedIncrement(&g_delegateThunkAlloc) - 1;
-    if (slot >= kDelegateThunkCount)
-    {
-        svcOutputDebugString("libnx: delegate cb: thunk pool exhausted\n", 45);
-        return NULL;
+        delete context;
+        return nullptr;
     }
 
-    g_delegateThunkInvoke[slot] = pInvokeMeth;
-    g_delegateThunkTargets[slot] = CreateWeakHandle(GetAppDomain()->GetHandleStore(), delegateObj);
-    if (numArgs == 3)
-        return g_delegateThunksA3[slot];
-    if (numArgs == 2)
-        return g_delegateThunksA2[slot];
-    return g_delegateThunksA1[slot];
+    Object* pDelegateRaw = OBJECTREFToObject(delegateObj);
+    DangerousNonHostedSpinLockHolder lockHolder(&g_delegateThunkLock);
+    for (DelegateThunkContext* existing = g_delegateThunks; existing != nullptr; existing = existing->Next)
+    {
+        OBJECTREF existingDelegate = existing->Target != NULL ? ObjectFromHandle(existing->Target) : NULL;
+        if (existingDelegate != NULL && OBJECTREFToObject(existingDelegate) == pDelegateRaw)
+        {
+            DestroyWeakHandle(context->Target);
+            delete context;
+            return existing->EntryPoint;
+        }
+    }
+
+    context->Invoke = pInvokeMeth;
+    context->EntryPoint = AllocateDelegateThunk(context);
+    if (context->EntryPoint == nullptr)
+    {
+        DestroyWeakHandle(context->Target);
+        delete context;
+        svcOutputDebugString("libnx: delegate cb: JIT allocation failed\n", 43);
+        return nullptr;
+    }
+
+    context->Next = g_delegateThunks;
+    g_delegateThunks = context;
+    return context->EntryPoint;
 }
