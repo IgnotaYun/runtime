@@ -8,6 +8,7 @@ extern "C" uint64_t nxstat_ticks(void);              // libnx armGetSystemTick
 extern "C" uint64_t nxstat_ticks_per_sec(void);
 extern "C" volatile uint64_t nxstat_pinvoke_count, nxstat_pinvoke_ticks;
 extern "C" volatile uint64_t nxstat_invoke_managed_count, nxstat_invoke_managed_ticks;
+extern "C" const char* volatile nxstat_phase;
 
 struct NxStatScope
 {

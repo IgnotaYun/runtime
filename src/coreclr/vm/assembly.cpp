@@ -12,6 +12,9 @@
 ===========================================================*/
 
 #include "common.h"
+#if defined(TARGET_LIBNX)
+#include "libnx/nxstats.h"
+#endif
 
 #include <stdlib.h>
 
@@ -1142,6 +1145,9 @@ extern "C" void SystemJS_ResolveMainPromise(int exitCode);
 
 static void RunMainInternal(Param* pParam)
 {
+#if defined(TARGET_LIBNX)
+    nxstat_phase = "main-prepare";
+#endif
     PTRARRAYREF StrArgArray = NULL;
     GCPROTECT_BEGIN(StrArgArray);
 
@@ -1151,8 +1157,14 @@ static void RunMainInternal(Param* pParam)
     PCODE entryPoint;
     {
         GCX_PREEMP();
+#if defined(TARGET_LIBNX)
+        nxstat_phase = "main-get-code";
+#endif
         entryPoint = pParam->pFD->GetSingleCallableAddrOfCode();
     }
+#if defined(TARGET_LIBNX)
+    nxstat_phase = "main-code-ready";
+#endif
 #ifdef FEATURE_PORTABLE_ENTRYPOINTS
     // The entry point is invoked from R2R-compiled code (Environment.CallEntryPoint performs an
     // indirect call through this address), so it must resolve to real code (native R2R or a
@@ -1176,11 +1188,17 @@ static void RunMainInternal(Param* pParam)
     }
 
     UnmanagedCallersOnlyCaller callEntryPoint(METHOD__ENVIRONMENT__CALL_ENTRY_POINT);
+#if defined(TARGET_LIBNX)
+    nxstat_phase = "main-enter-managed";
+#endif
     callEntryPoint.InvokeThrowing(
         static_cast<INT_PTR>(entryPoint),
         pArgument,
         pReturnValue,
         CLR_BOOL_ARG(pParam->captureException));
+#if defined(TARGET_LIBNX)
+    nxstat_phase = "main-returned";
+#endif
 
     if (hasReturnValue)
     {
@@ -1316,6 +1334,9 @@ void RunManagedStartup()
 
 INT32 Assembly::ExecuteMainMethod(PTRARRAYREF *stringArgs, bool captureException)
 {
+#if defined(TARGET_LIBNX)
+    nxstat_phase = "execute-main";
+#endif
     CONTRACTL
     {
         INSTANCE_CHECK;
@@ -1341,6 +1362,9 @@ INT32 Assembly::ExecuteMainMethod(PTRARRAYREF *stringArgs, bool captureException
 
         GCX_COOP();
 
+#if defined(TARGET_LIBNX)
+        nxstat_phase = "get-entrypoint";
+#endif
         pMeth = GetEntryPoint();
 
         if (pMeth) {
@@ -1376,8 +1400,14 @@ INT32 Assembly::ExecuteMainMethod(PTRARRAYREF *stringArgs, bool captureException
             // Main thread wasn't started by the runtime.
             Thread::InitializationForManagedThreadInNative(pThread);
 
+#if defined(TARGET_LIBNX)
+            nxstat_phase = "managed-startup";
+#endif
             RunManagedStartup();
 
+#if defined(TARGET_LIBNX)
+            nxstat_phase = "run-main";
+#endif
             hr = RunMain(pMeth, &iRetVal, stringArgs, captureException);
 
             Thread::CleanUpForManagedThreadInNative(pThread);
