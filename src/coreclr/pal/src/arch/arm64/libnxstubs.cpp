@@ -601,14 +601,6 @@ extern "C" ssize_t write(int fd, const void* buf, size_t n)
 
 extern "C" int close(int fd)
 {
-    // Drop any readahead cache slot for this fd (io_shims.c) so a reused fd
-    // can never serve stale data.
-    // NOTE: must be a strong reference — a weak one gets discarded by
-    // --gc-sections (weak undefs don't keep sections alive), silently
-    // disabling invalidation and serving stale data on recycled fds.
-    extern void nx_ra_invalidate(int);
-    nx_ra_invalidate(fd);
-
     if (!nx_is_pipe_fd(fd))
         return _close_r(_REENT, fd);
 
