@@ -4,6 +4,7 @@
     <TargetFrameworks>$(NetCoreAppCurrent)-windows;$(NetCoreAppCurrent)</TargetFrameworks>
     <RootNamespace>System.Xml</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants Condition="'$(TargetsLibnx)' == 'true'">$(DefineConstants);TARGET_LIBNX</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

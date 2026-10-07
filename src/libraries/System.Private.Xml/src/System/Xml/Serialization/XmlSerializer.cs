@@ -115,7 +115,12 @@ namespace System.Xml.Serialization
 
         internal static SerializationMode Mode
         {
+#if TARGET_LIBNX
+            // Avoid serializer assembly generation on libnx; general JIT support remains enabled.
+            get => SerializationMode.ReflectionOnly;
+#else
             get => RuntimeFeature.IsDynamicCodeSupported ? s_mode : SerializationMode.ReflectionOnly;
+#endif
             set => s_mode = value;
         }
 
