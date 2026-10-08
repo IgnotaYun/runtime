@@ -786,9 +786,6 @@ namespace System.Net.Sockets
                                             // "losing" the notification and causing the operation to pend indefinitely.
             private AsyncOperation? _tail;   // Queue of pending IO operations to process when data becomes available.
 
-#if TARGET_LIBNX
-            internal bool IsEmpty => _tail == null;
-#endif
 
             // The _queueLock is used to ensure atomic access to the queue state above.
             // The lock is only ever held briefly, to read and/or update queue state, and
@@ -1271,9 +1268,6 @@ namespace System.Net.Sockets
         /// <summary>An index into <see cref="SocketAsyncEngine"/>'s table of all contexts that are currently <see cref="IsRegistered"/>.</summary>
         internal int GlobalContextIndex = -1;
 
-#if TARGET_LIBNX
-        internal bool HasPendingWrites => !_sendQueue.IsEmpty;
-#endif
 
         private readonly object _registerLock = new object();
 
@@ -1283,6 +1277,13 @@ namespace System.Net.Sockets
 
             _receiveQueue.Init();
             _sendQueue.Init();
+#if TARGET_LIBNX
+            // Horizon has a bounded pool of BSD IPC sessions. Blocking receives on
+            // several sockets can occupy every session and prevent their sends or
+            // readiness poll from running. Preserve synchronous managed semantics
+            // through the operation queues, never by holding a native session.
+            SetHandleNonBlocking();
+#endif
         }
 
         public bool PreferInlineCompletions
@@ -1342,14 +1343,10 @@ namespace System.Net.Sockets
             // We don't need to synchronize with Register.
             // This method is called when the handle gets released.
             // The Register method will throw ODE when it tries to use the handle at this point.
-#if TARGET_LIBNX
-            _asyncEngine?.UnregisterSocket(_socket.DangerousGetHandle());
-#else
             if (IsRegistered)
             {
                 SocketAsyncEngine.UnregisterSocket(this);
             }
-#endif
 
             return aborted;
         }
@@ -1387,6 +1384,11 @@ namespace System.Net.Sockets
 
         public void SetHandleBlocking()
         {
+#if TARGET_LIBNX
+            // Synchronous callers still wait in PerformSyncOperation; keep the
+            // descriptor nonblocking so unrelated sockets can share BSD sessions.
+            SetHandleNonBlocking();
+#else
             if (OperatingSystem.IsWasi())
             {
                 // WASI sockets are always non-blocking
@@ -1400,6 +1402,7 @@ namespace System.Net.Sockets
                     _isHandleNonBlocking = false;
                 }
             }
+#endif
         }
 
         private void PerformSyncOperation<TOperation>(ref OperationQueue<TOperation> queue, TOperation operation, int timeout, int observedSequenceNumber)
