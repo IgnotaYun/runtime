@@ -427,12 +427,20 @@ void UnlockedInterleavedLoaderHeap::UnlockedBackoutStub(void *pMem
     // define Backout(NULL) be a legal NOP.
     if (pMem == NULL)
     {
+        return;
     }
 
     size_t dwSize = m_dwGranularity;
 
     // Clear the RW page
-    memset((BYTE*)pMem + GetStubCodePageSize(), 0x00, dwSize); // Fill freed region with 0
+    BYTE* data = (BYTE*)pMem + GetStubCodePageSize();
+#if defined(TARGET_LIBNX)
+    ExecutableWriterHolder<BYTE> dataWriter(data, dwSize);
+    BYTE* writableData = dataWriter.GetRW();
+#else
+    BYTE* writableData = data;
+#endif
+    memset(writableData, 0x00, dwSize); // Fill freed region with 0
 
     if (m_pAllocPtr == ( ((BYTE*)pMem) + dwSize ))
     {
@@ -440,9 +448,9 @@ void UnlockedInterleavedLoaderHeap::UnlockedBackoutStub(void *pMem
     }
     else
     {
-        InterleavedStubFreeListNode* newFreeNode = (InterleavedStubFreeListNode*)((BYTE*)pMem + GetStubCodePageSize());
+        InterleavedStubFreeListNode* newFreeNode = (InterleavedStubFreeListNode*)writableData;
         newFreeNode->m_pNext = m_pFreeListHead;
-        m_pFreeListHead = newFreeNode;
+        m_pFreeListHead = (InterleavedStubFreeListNode*)data;
     }
 }
 
@@ -493,7 +501,12 @@ void *UnlockedInterleavedLoaderHeap::UnlockedAllocStub_NoThrow(
         // We have a free stub - use it
         InterleavedStubFreeListNode* pFreeStubData = m_pFreeListHead;
         m_pFreeListHead = pFreeStubData->m_pNext;
+#if defined(TARGET_LIBNX)
+        ExecutableWriterHolder<InterleavedStubFreeListNode> dataWriter(pFreeStubData, sizeof(*pFreeStubData));
+        dataWriter.GetRW()->m_pNext = NULL;
+#else
         pFreeStubData->m_pNext = NULL;
+#endif
         pResult = ((BYTE*)pFreeStubData) - GetStubCodePageSize();
     }
     else
