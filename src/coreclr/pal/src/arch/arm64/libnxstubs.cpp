@@ -224,12 +224,20 @@ AllocateExceptionRecords(EXCEPTION_RECORD** exceptionRecord, CONTEXT** contextRe
     *exceptionRecord = &records->ExceptionRecord;
 }
 
+// The unwinder is shared with the standalone register-restore test (libnx-unwind.h).
+#include "libnx-unwind.h"
+
+static_assert(offsetof(CONTEXT, X) == offsetof(LibnxUnwindContext, X), "libnx unwind context mismatch");
+static_assert(offsetof(CONTEXT, Fp) == offsetof(LibnxUnwindContext, Fp), "libnx unwind context mismatch");
+static_assert(offsetof(CONTEXT, Lr) == offsetof(LibnxUnwindContext, Lr), "libnx unwind context mismatch");
+static_assert(offsetof(CONTEXT, Sp) == offsetof(LibnxUnwindContext, Sp), "libnx unwind context mismatch");
+static_assert(offsetof(CONTEXT, Pc) == offsetof(LibnxUnwindContext, Pc), "libnx unwind context mismatch");
+static_assert(offsetof(CONTEXT, V) == offsetof(LibnxUnwindContext, V), "libnx unwind context mismatch");
+
 extern "C" PALIMPORT BOOL PALAPI
 PAL_VirtualUnwind(CONTEXT *context)
 {
-    (void)context;
-    _ASSERT(!"PAL_VirtualUnwind not implemented on libnx");
-    return FALSE;
+    return libnxcfi::LibnxVirtualUnwindCfi((LibnxUnwindContext *)context) ? TRUE : FALSE;
 }
 
 // Signal-handling surface — pal/src/exception/signal.cpp is excluded on libnx.
