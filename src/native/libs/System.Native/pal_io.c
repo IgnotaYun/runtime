@@ -19,6 +19,11 @@
 #if !defined(TARGET_LIBNX)
 #include <sys/mman.h>
 #include <sys/uio.h>
+#elif HAVE_PREADV || HAVE_PWRITEV
+// The libnx target configuration leaves preadv/pwritev off, but the linuxnx
+// mirror runs the same sources against glibc, where they are available and are
+// then used without their header (clang-14 only warned, clang >= 15 errors).
+#include <sys/uio.h>
 #endif
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -1193,17 +1198,23 @@ int32_t SystemNative_MSync(void* address, uint64_t length, int32_t flags)
 
 int64_t SystemNative_SysConf(int32_t name)
 {
-    #if !defined(TARGET_LIBNX)
     switch (name)
     {
         case PAL_SC_CLK_TCK:
+#if defined(TARGET_LIBNX) && !defined(LINUXNX_MIRROR)
+            return CLOCKS_PER_SEC;
+#else
             return sysconf(_SC_CLK_TCK);
+#endif
         case PAL_SC_PAGESIZE:
+#if defined(TARGET_LIBNX) && !defined(LINUXNX_MIRROR)
+            return 4096; // Horizon memory permission and mapping granularity.
+#else
             return sysconf(_SC_PAGESIZE);
+#endif
         default:
             break; // fall through to error
     }
-    #endif
 
     assert_msg(false, "Unknown SysConf name", (int)name);
     errno = EINVAL;
