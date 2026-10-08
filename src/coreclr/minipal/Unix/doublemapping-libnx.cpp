@@ -272,11 +272,44 @@ bool VMToOSInterface::FreeThunksFromTemplate(void* thunks, size_t templateSize)
     return false;
 }
 
-extern "C" bool minipal_libnx_flush_instruction_cache(void* rx, size_t size)
+// Native detour consumers must patch through the owned RW alias, never mprotect
+// the RX view. Return only the remainder of this arena; callers validate size.
+extern "C" __attribute__((visibility("default"))) bool minipal_libnx_get_write_alias(void* address, void** writable, size_t* available)
+{
+    if (g_mapper == nullptr || writable == nullptr || available == nullptr)
+        return false;
+    uintptr_t value = reinterpret_cast<uintptr_t>(address);
+    uintptr_t base = reinterpret_cast<uintptr_t>(g_mapper->rx);
+    if (value >= base && value - base < g_mapper->size)
+    {
+        *writable = g_mapper->rw + (value - base);
+        *available = g_mapper->size - (value - base);
+        return true;
+    }
+    base = reinterpret_cast<uintptr_t>(g_mapper->rw);
+    if (value >= base && value - base < g_mapper->size)
+    {
+        *writable = address;
+        *available = g_mapper->size - (value - base);
+        return true;
+    }
+    return false;
+}
+
+extern "C" __attribute__((visibility("default"))) bool minipal_libnx_flush_instruction_cache(void* rx, size_t size)
 {
     uint8_t* rw;
     if (!TranslateRxToRw(rx, size, &rw))
-        return false;
+    {
+        if (g_mapper == nullptr)
+            return false;
+        uintptr_t value = reinterpret_cast<uintptr_t>(rx);
+        uintptr_t base = reinterpret_cast<uintptr_t>(g_mapper->rw);
+        if (value < base || size > g_mapper->size || value - base > g_mapper->size - size)
+            return false;
+        rw = static_cast<uint8_t*>(rx);
+        rx = g_mapper->rx + (value - base);
+    }
 
 #if defined(LINUXNX_MIRROR)
     __builtin___clear_cache(reinterpret_cast<char*>(rw), reinterpret_cast<char*>(rw + size));
