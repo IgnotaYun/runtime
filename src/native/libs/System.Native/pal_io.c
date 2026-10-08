@@ -372,6 +372,14 @@ intptr_t SystemNative_Open(const char* path, int32_t flags, int32_t mode)
 
 int32_t SystemNative_Close(intptr_t fd)
 {
+#if defined(TARGET_LIBNX)
+    // Every managed Socket close funnels through here (SafeSocketHandle ->
+    // Interop.Sys.Close).  The libnx socket event port is a table of descriptors,
+    // so unlike epoll/kqueue it does not drop the registration of a descriptor
+    // that is closed; do that explicitly before the descriptor can be reused.
+    extern void NetPollCloseDescriptor(int32_t fd);
+    NetPollCloseDescriptor(ToFileDescriptor(fd));
+#endif
     int result = close(ToFileDescriptor(fd));
     if (result < 0 && errno == EINTR) result = 0; // on all supported platforms, close(2) returning EINTR still means it was released
     return result;

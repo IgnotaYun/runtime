@@ -48,6 +48,18 @@
 #else
 #include <sys/un.h>
 #endif
+
+// SystemNative_Close (pal_io.c) calls NetPollCloseDescriptor so that the libnx
+// descriptor table used by the socket event port cannot outlive the descriptor.
+// A libnx build that has epoll/kqueue (the host mirror, where the OS drops closed
+// descriptors itself) or no poll(2) has no such table, so it gets a no-op; the
+// real one is defined with the port below.
+#if defined(TARGET_LIBNX) && !(HAVE_SYS_POLL_H && !HAVE_EPOLL && !HAVE_KQUEUE)
+void NetPollCloseDescriptor(int32_t fd)
+{
+    (void)fd;
+}
+#endif
 #if defined(__APPLE__) && __APPLE__
 #include <sys/socketvar.h>
 #endif
@@ -243,16 +255,40 @@ static bool TryConvertAddressFamilyPalToPlatform(int32_t palAddressFamily, sa_fa
             return true;
 
         case AddressFamily_AF_UNIX:
+#if defined(TARGET_LIBNX)
+            // Horizon's BSD service has no UNIX domain sockets, which is why this
+            // port also excludes <sys/un.h> and reports zero domain socket sizes in
+            // SystemNative_GetDomainSocketSizes.  Asking for one is not a defined
+            // request, so the managed support probe (SocketProtocolSupportPal, which
+            // probes AF_UNIX as part of its static initialization) got a failure it
+            // did not expect instead of EAFNOSUPPORT - and that happens before the
+            // first user socket call.  Refuse the family here, like IPv6 above.
+            return false;
+#else
             *platformAddressFamily = AF_UNIX;
             return true;
+#endif
 
         case AddressFamily_AF_INET:
             *platformAddressFamily = AF_INET;
             return true;
 
         case AddressFamily_AF_INET6:
+#if DISABLE_IPV6
+            // libnx's BSD service is IPv4-only, which is why this port also defines
+            // DISABLE_IPV6 and drops every IPv6 socket option conversion below.
+            // Refusing the family here keeps that consistent: previously socket(AF_INET6)
+            // still succeeded on the linuxnx mirror (glibc), so Socket.OSSupportsIPv6
+            // reported true and the managed Socket(SocketType.Stream, ProtocolType.Tcp)
+            // constructor (which then sets IPV6_V6ONLY) failed with Error_ENOTSUP -
+            // surfaced as SocketException(OperationNotSupported) before any I/O, e.g. for
+            // HttpClient.  Reporting EAFNOSUPPORT lets the managed layer fall back to IPv4,
+            // and makes an explicit IPv6 attempt fail honestly instead of half-working.
+            return false;
+#else
             *platformAddressFamily = AF_INET6;
             return true;
+#endif
 #ifdef AF_PACKET
         case AddressFamily_AF_PACKET:
             *platformAddressFamily = AF_PACKET;
@@ -1781,7 +1817,7 @@ int32_t SystemNative_Accept(intptr_t socket, uint8_t* socketAddress, int32_t* so
 
     socklen_t addrLen = (socklen_t)*socketAddressLen;
     int accepted;
-#if HAVE_ACCEPT4 && defined(SOCK_CLOEXEC)
+#if HAVE_ACCEPT4 && defined(SOCK_CLOEXEC) && !defined(TARGET_LIBNX)
 #if defined(TARGET_WASI) // WASI is always FD_CLOEXEC and we always need SOCK_NONBLOCK. SOCK_CLOEXEC doesn't make sense in WASI.
     while ((accepted = accept4(fd, (struct sockaddr*)socketAddress, &addrLen, SOCK_NONBLOCK)) < 0 && errno == EINTR);
 #else // !TARGET_WASI
@@ -1789,7 +1825,7 @@ int32_t SystemNative_Accept(intptr_t socket, uint8_t* socketAddress, int32_t* so
 #endif // !TARGET_WASI
 #else
     while ((accepted = accept(fd, (struct sockaddr*)socketAddress, &addrLen)) < 0 && errno == EINTR);
-#if defined(FD_CLOEXEC)
+#if defined(FD_CLOEXEC) && !defined(TARGET_LIBNX)
     // macOS does not have accept4 but it can set _CLOEXEC on descriptor.
     // Unlike accept4 it is not atomic and the fd can leak child process.
     if ((accepted != -1) && fcntl(accepted, F_SETFD, FD_CLOEXEC) != 0)
@@ -1987,6 +2023,13 @@ int32_t SystemNative_GetSocketErrorOption(intptr_t socket, int32_t* error)
     }
 
     assert(optLen == sizeof(socketErrno));
+#if defined(TARGET_LIBNX) && !defined(LINUXNX_MIRROR) && !defined(__linux__)
+    // libnx converts BSD service call errors to newlib errno, but SO_ERROR is
+    // returned as an option payload and still uses Horizon's Linux numbering.
+    extern int _convert_errno(int);
+    if (socketErrno != 0)
+        socketErrno = _convert_errno(socketErrno);
+#endif
     *error = SystemNative_ConvertErrorPlatformToPal(socketErrno);
     return Error_SUCCESS;
 }
@@ -2918,7 +2961,13 @@ int32_t SystemNative_Socket(int32_t addressFamily, int32_t socketType, int32_t p
         return Error_EPROTONOSUPPORT;
     }
 
-#ifdef SOCK_CLOEXEC
+#if defined(SOCK_CLOEXEC) && !defined(TARGET_LIBNX)
+    // Only the libc socket() entry points understand the BSD socket-type flags.
+    // libnx forwards the type to the Horizon BSD service verbatim, which is not the
+    // FreeBSD libc path, so SOCK_CLOEXEC (0x10000000 there) must not be folded in:
+    // the service would see type 0x10000002 for a datagram socket instead of 2.
+    // The flag has no meaning on the console either (no exec/fork), and the
+    // fallback fcntl below is best effort.
     platformSocketType |= SOCK_CLOEXEC;
 #endif
 #if defined(TARGET_WASI)
@@ -3458,6 +3507,468 @@ static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32
 
 #else // !HAVE_KQUEUE !HAVE_EPOLL
 
+#if defined(TARGET_LIBNX) && HAVE_SYS_POLL_H
+//
+// libnx has neither epoll nor kqueue, but its BSD service does implement poll(2)
+// over socket descriptors, so the event port is emulated on top of poll(2).  The
+// framework's SocketAsyncEngine only ever talks to a port through
+// CreateSocketEventPort/TryChangeSocketEventRegistration/WaitForSocketEvents, so it
+// does not care what the port is implemented with; without this, the whole
+// asynchronous socket surface (Socket.ConnectAsync, Socket.ReceiveAsync, and
+// therefore HttpClient) is unavailable, because CreateSocketEventPort used to
+// return Error_ENOSYS on libnx.
+//
+// poll(2) is level triggered, while the managed engine is written against edge
+// triggered epoll/kqueue semantics: readiness that stays up (an established
+// connection is permanently writable) must not be reported on every wait, or the
+// event loop spins.  Readiness is therefore reported once and its descriptor is
+// then left out of the poll set, and PollRepeatMs later it is re-armed and
+// reported again.  That repeat is what wakes an operation whose readiness change
+// was not sampled, because the managed engine never re-arms its own interest.
+//
+// The managed side never tells us that a socket was closed - epoll and kqueue
+// drop closed descriptors by themselves, a plain table of descriptors does not.
+// A registration is therefore dropped explicitly from SystemNative_Close (the
+// one funnel every managed Socket close goes through) and, as a safety net,
+// pruned when poll(2) reports a descriptor as gone.
+//
+// A registration can also be replaced while a WaitForSocketEvents call is
+// blocked in poll(2): the descriptor is closed, its number is reused, and the new
+// socket registers itself.  Every registration carries a generation counter, and
+// the event produced from a stale snapshot is dropped instead of being delivered
+// with the previous registration's user data.
+//
+#define PollPortBase       0x40000000 // Not a real descriptor: indexes g_pollPorts.
+#define PollPortCount      32         // One event port per SocketAsyncEngine.
+#define PollPortMaxEntries 128        // Sockets registered with a single port.
+#define PollWaitSliceMs    10
+#define PollRepeatMs       10
+
+static const size_t SocketEventBufferElementSize = sizeof(SocketEvent);
+
+typedef struct
+{
+    bool inUse;
+    int count;
+    int fds[PollPortMaxEntries];
+    int32_t interests[PollPortMaxEntries]; // SocketEvents the managed side asked for.
+    int32_t reported[PollPortMaxEntries];  // SocketEvents already delivered while ready.
+    uintptr_t data[PollPortMaxEntries];
+    uint64_t generations[PollPortMaxEntries]; // Bumped whenever a registration changes.
+    uint64_t nextGeneration;
+} PollEventPort;
+
+// Snapshot of an entry, so that the result of a poll(2) can be correlated back to
+// it even if registrations were changed while the wait was in flight.
+typedef struct
+{
+    int fd;
+    int32_t interest;
+    uintptr_t data;
+    uint64_t generation;
+} PollEventPortEntry;
+
+static PollEventPort g_pollPorts[PollPortCount];
+static pthread_mutex_t g_pollPortsLock = PTHREAD_MUTEX_INITIALIZER;
+
+static PollEventPort* GetPollEventPort(int32_t port)
+{
+    int index = port - PollPortBase;
+    if (index < 0 || index >= PollPortCount || !g_pollPorts[index].inUse)
+    {
+        return NULL;
+    }
+
+    return &g_pollPorts[index];
+}
+
+static int GetPollEventPortIndex(PollEventPort* port, int fd)
+{
+    for (int i = 0; i < port->count; i++)
+    {
+        if (port->fds[i] == fd)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static void RemovePollEventPortEntry(PollEventPort* port, int index)
+{
+    int last = port->count - 1;
+    if (index != last)
+    {
+        port->fds[index] = port->fds[last];
+        port->interests[index] = port->interests[last];
+        port->reported[index] = port->reported[last];
+        port->data[index] = port->data[last];
+        port->generations[index] = port->generations[last];
+    }
+
+    port->count = last;
+}
+
+// Drops the registration of a descriptor that is about to be closed.  Called by
+// SystemNative_Close: without it a registration would outlive its descriptor and,
+// once the descriptor number is reused (by a socket that never registers, or by a
+// plain file), the stale entry would poll that unrelated descriptor forever.
+void NetPollCloseDescriptor(int32_t fd)
+{
+    pthread_mutex_lock(&g_pollPortsLock);
+    for (int p = 0; p < PollPortCount; p++)
+    {
+        PollEventPort* eventPort = &g_pollPorts[p];
+        if (!eventPort->inUse)
+        {
+            continue;
+        }
+
+        for (int index = 0; index < eventPort->count; )
+        {
+            if (eventPort->fds[index] == fd)
+            {
+                RemovePollEventPortEntry(eventPort, index);
+                continue;
+            }
+
+            index++;
+        }
+    }
+    pthread_mutex_unlock(&g_pollPortsLock);
+}
+
+// Drop descriptors that no longer exist.  libnx's poll(2) fails the whole call
+// with EBADF when any of the descriptors it was given is gone, so after such a
+// failure every descriptor is re-checked on its own to find the dead ones.
+static void PrunePollEventPortEntries(PollEventPort* port)
+{
+    for (int i = 0; i < port->count; )
+    {
+        struct pollfd probe;
+        probe.fd = port->fds[i];
+        probe.events = 0;
+        probe.revents = 0;
+
+        int rv;
+        while ((rv = poll(&probe, 1, 0)) < 0 && errno == EINTR);
+        if (rv < 0 || (probe.revents & POLLNVAL) != 0)
+        {
+            RemovePollEventPortEntry(port, i);
+            continue;
+        }
+
+        i++;
+    }
+}
+
+static int32_t GetPollEventsForSocketEvents(int32_t socketEvents)
+{
+    int32_t pollEvents = 0;
+    if ((socketEvents & SocketEvents_SA_READ) != 0)
+    {
+        pollEvents |= POLLIN;
+    }
+    if ((socketEvents & SocketEvents_SA_WRITE) != 0)
+    {
+        pollEvents |= POLLOUT;
+    }
+
+    return pollEvents;
+}
+
+static int32_t GetSocketEventsForPollEvents(int32_t pollEvents)
+{
+    int32_t socketEvents = 0;
+    if ((pollEvents & POLLIN) != 0)
+    {
+        socketEvents |= SocketEvents_SA_READ;
+    }
+    if ((pollEvents & POLLOUT) != 0)
+    {
+        socketEvents |= SocketEvents_SA_WRITE;
+    }
+    if ((pollEvents & POLLERR) != 0)
+    {
+        socketEvents |= SocketEvents_SA_ERROR;
+    }
+#ifdef POLLHUP
+    if ((pollEvents & POLLHUP) != 0)
+    {
+        // Same as the epoll epilogue: a hangup is handed over as readability plus
+        // writability, and the ordinary processing picks the close/error up.
+        socketEvents |= SocketEvents_SA_READ | SocketEvents_SA_WRITE;
+    }
+#endif
+
+    return socketEvents;
+}
+
+static int32_t CreateSocketEventPortInner(int32_t* port)
+{
+    assert(port != NULL);
+
+    pthread_mutex_lock(&g_pollPortsLock);
+    for (int i = 0; i < PollPortCount; i++)
+    {
+        if (!g_pollPorts[i].inUse)
+        {
+            g_pollPorts[i].inUse = true;
+            g_pollPorts[i].count = 0;
+            g_pollPorts[i].nextGeneration = 0;
+            *port = PollPortBase + i;
+            pthread_mutex_unlock(&g_pollPortsLock);
+            return Error_SUCCESS;
+        }
+    }
+    pthread_mutex_unlock(&g_pollPortsLock);
+
+    *port = -1;
+    return Error_EMFILE;
+}
+
+static int32_t CloseSocketEventPortInner(int32_t port)
+{
+    pthread_mutex_lock(&g_pollPortsLock);
+    PollEventPort* eventPort = GetPollEventPort(port);
+    if (eventPort != NULL)
+    {
+        eventPort->inUse = false;
+        eventPort->count = 0;
+    }
+    pthread_mutex_unlock(&g_pollPortsLock);
+
+    return eventPort != NULL ? Error_SUCCESS : Error_EBADF;
+}
+
+static int32_t TryChangeSocketEventRegistrationInner(
+    int32_t port, int32_t socket, SocketEvents currentEvents, SocketEvents newEvents,
+uintptr_t data)
+{
+    (void)currentEvents;
+
+    pthread_mutex_lock(&g_pollPortsLock);
+    PollEventPort* eventPort = GetPollEventPort(port);
+    if (eventPort == NULL)
+    {
+        pthread_mutex_unlock(&g_pollPortsLock);
+        return Error_EBADF;
+    }
+
+    int index = GetPollEventPortIndex(eventPort, socket);
+    int32_t result = Error_SUCCESS;
+
+    if (newEvents == SocketEvents_SA_NONE)
+    {
+        // Deregistration.  The managed engine does not do this itself (epoll and
+        // kqueue drop closed descriptors on their own), but accept it anyway.
+        if (index >= 0)
+        {
+            RemovePollEventPortEntry(eventPort, index);
+        }
+    }
+    else if (index >= 0)
+    {
+        eventPort->interests[index] = (int32_t)newEvents;
+        eventPort->reported[index] = 0;
+        eventPort->data[index] = data;
+        eventPort->generations[index] = ++eventPort->nextGeneration;
+    }
+    else if (eventPort->count < PollPortMaxEntries)
+    {
+        index = eventPort->count++;
+        eventPort->fds[index] = socket;
+        eventPort->interests[index] = (int32_t)newEvents;
+        eventPort->reported[index] = 0;
+        eventPort->data[index] = data;
+        eventPort->generations[index] = ++eventPort->nextGeneration;
+    }
+    else
+    {
+        result = Error_ENOMEM;
+    }
+
+    pthread_mutex_unlock(&g_pollPortsLock);
+    return result;
+}
+
+static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32_t* count)
+{
+    assert(buffer != NULL);
+    assert(count != NULL);
+    assert(*count >= 0);
+
+    struct pollfd fds[PollPortMaxEntries];
+    PollEventPortEntry entries[PollPortMaxEntries];
+
+    for (;;)
+    {
+        int entryCount = 0;
+        bool repeatsPending = false;
+
+        pthread_mutex_lock(&g_pollPortsLock);
+        PollEventPort* eventPort = GetPollEventPort(port);
+        if (eventPort != NULL)
+        {
+            entryCount = eventPort->count;
+            for (int i = 0; i < entryCount; i++)
+            {
+                entries[i].fd = eventPort->fds[i];
+                entries[i].interest = eventPort->interests[i];
+                entries[i].data = eventPort->data[i];
+                entries[i].generation = eventPort->generations[i];
+
+                if (eventPort->reported[i] != 0)
+                {
+                    // Already delivered and still believed ready: poll(2) would
+                    // return it immediately on every wait, so leave it out of this
+                    // round (a negative descriptor is ignored, its revents stay 0)
+                    // and let the timeout below decide when to repeat it.
+                    repeatsPending = true;
+                    fds[i].fd = -1;
+                    fds[i].events = 0;
+                }
+                else
+                {
+                    fds[i].fd = eventPort->fds[i];
+                    fds[i].events = (short)GetPollEventsForSocketEvents(eventPort->interests[i]);
+                }
+                fds[i].revents = 0;
+            }
+        }
+        pthread_mutex_unlock(&g_pollPortsLock);
+
+        if (eventPort == NULL)
+        {
+            *count = 0;
+            return Error_EBADF;
+        }
+
+        // The timeout either repeats readiness that is still up - the managed
+        // engine never re-arms a socket, so a repeat is the only thing that can
+        // wake an operation whose readiness change we did not sample - or, when
+        // everything is quiet, just refreshes the snapshot so a registration that
+        // was made while we waited is picked up.
+        int rv;
+        while ((rv = poll(fds, (nfds_t)entryCount, repeatsPending ? PollRepeatMs : PollWaitSliceMs)) < 0 && errno == EINTR);
+        if (rv < 0)
+        {
+            if (errno == EBADF || errno == EINVAL)
+            {
+                pthread_mutex_lock(&g_pollPortsLock);
+                eventPort = GetPollEventPort(port);
+                if (eventPort != NULL)
+                {
+                    PrunePollEventPortEntries(eventPort);
+                }
+                pthread_mutex_unlock(&g_pollPortsLock);
+                continue;
+            }
+
+            *count = 0;
+            return SystemNative_ConvertErrorPlatformToPal(errno);
+        }
+
+        int32_t produced = 0;
+
+        pthread_mutex_lock(&g_pollPortsLock);
+        eventPort = GetPollEventPort(port);
+        if (eventPort == NULL)
+        {
+            pthread_mutex_unlock(&g_pollPortsLock);
+            *count = 0;
+            return Error_EBADF;
+        }
+
+        if (rv == 0)
+        {
+            // Nothing new became ready, so whatever is still delivered as ready is
+            // due for a repeat: re-arm it, the next round reports it again.
+            for (int i = 0; i < eventPort->count; i++)
+            {
+                eventPort->reported[i] = 0;
+            }
+            pthread_mutex_unlock(&g_pollPortsLock);
+            continue;
+        }
+
+        for (int i = 0; i < entryCount; i++)
+        {
+            if (fds[i].fd < 0)
+            {
+                // Left out of the poll set because its readiness was already
+                // reported: poll(2) has no information about it, so its
+                // bookkeeping must not be touched here (clearing it would make the
+                // descriptor eligible again on every round and defeat the pacing).
+                continue;
+            }
+
+            int32_t revents = fds[i].revents;
+            int index = GetPollEventPortIndex(eventPort, entries[i].fd);
+            if (index < 0)
+            {
+                // Unregistered while the wait was in flight.
+                continue;
+            }
+
+            if (eventPort->generations[index] != entries[i].generation)
+            {
+                // The descriptor was closed and registered again (or re-registered
+                // with different options) while the wait was in flight: this result
+                // belongs to the previous registration, so drop it.  The new
+                // registration is un-reported and is polled again immediately.
+                continue;
+            }
+
+            if ((revents & POLLNVAL) != 0)
+            {
+                RemovePollEventPortEntry(eventPort, index);
+                continue;
+            }
+
+            int32_t ready = GetSocketEventsForPollEvents(revents) & entries[i].interest;
+            if ((revents & POLLERR) != 0)
+            {
+                // Surface errors even when they are outside the requested interest:
+                // a revents that maps to nothing would make this wait return
+                // immediately on every round, i.e. spin the event thread.
+                ready |= SocketEvents_SA_ERROR;
+            }
+            if (ready == 0 && (revents & ~(int32_t)(POLLIN | POLLOUT)) != 0)
+            {
+                // Same for any other condition poll(2) can report that the managed
+                // engine has no event for (POLLPRI, POLLRDHUP, ...).
+                ready = SocketEvents_SA_ERROR;
+            }
+            if (ready == 0)
+            {
+                // Not ready: the next readiness is a new one for the managed side.
+                eventPort->reported[index] = 0;
+                continue;
+            }
+
+            if (produced < *count)
+            {
+                buffer[produced].Data = entries[i].data;
+                buffer[produced].Events = ready;
+                produced++;
+                eventPort->reported[index] = ready;
+            }
+        }
+        pthread_mutex_unlock(&g_pollPortsLock);
+
+        if (produced > 0)
+        {
+            *count = produced;
+            return Error_SUCCESS;
+        }
+        // Only descriptors that died were reported: go around.
+    }
+}
+
+#else // !TARGET_LIBNX || !HAVE_SYS_POLL_H
+
 static const size_t SocketEventBufferElementSize = 0;
 
 static int32_t CloseSocketEventPortInner(int32_t port)
@@ -3478,6 +3989,9 @@ static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32
 {
     return Error_ENOSYS;
 }
+
+#endif // TARGET_LIBNX && HAVE_SYS_POLL_H
+
 #endif  // !HAVE_KQUEUE !HAVE_EPOLL
 
 #if defined(TARGET_WASI)
