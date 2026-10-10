@@ -63,6 +63,10 @@ SET_DEFAULT_DEBUG_CHANNEL(PROCESS); // some headers have code with asserts, so d
 #include <dlfcn.h>
 #include <limits.h>
 
+#ifdef TARGET_LIBNX
+extern "C" void runtime_exit_pal_terminate(int code) __attribute__((weak));
+#endif
+
 #ifdef __linux__
 #include <linux/membarrier.h>
 #include <sys/syscall.h>
@@ -466,6 +470,25 @@ static BOOL PROCEndProcess(UINT uExitCode, BOOL bTerminateUnconditionally)
     }
     else
     {
+        // libnx host termination hook.
+        //
+        // On Horizon, exit() runs the C++/atexit teardown and then libnx's exit
+        // path while CoreCLR's process-lifetime threads (GC, finalizer,
+        // threadpool, socket poll) are still alive and parked inside libnx IPC
+        // in our own .text. A homebrew loader (hbl) then resumes the NRO's
+        // teardown and unmaps those code pages, so the first thread scheduled
+        // out of its syscall faults on instruction fetch (Instruction Abort
+        // 2168-0001 at the svc's return). The host links runtime_exit.c, which
+        // stops the native services it started, delivers the required applet
+        // exit notification and terminates the process atomically. Hosts that
+        // do not link that module keep the plain exit() behaviour.
+#ifdef TARGET_LIBNX
+        if (runtime_exit_pal_terminate != NULL)
+        {
+            runtime_exit_pal_terminate((int)uExitCode);
+        }
+#endif
+
         exit(uExitCode);
     }
 
