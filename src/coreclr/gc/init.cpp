@@ -3,6 +3,12 @@
 
 #include "gcinternal.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#else
+#define nx_gc_phase(phase) ((void)0)
+#endif
+
 #ifdef SERVER_GC
 namespace SVR {
 #else // SERVER_GC
@@ -827,6 +833,12 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
     }
 
     GCConfig::SetConcurrentGC(gc_can_use_concurrent);
+
+    // Port trace (LINUXNX_GC_TRACE=1): concurrent GC is accepted when the heap
+    // can use write watch (always true on arm64, software write watch) *and*
+    // DOTNET_gcConcurrent is set. The GC's own dprintf logging is compiled out
+    // of this Release build (no STRESS_LOG), so this is the only signal.
+    nx_gc_phase(gc_can_use_concurrent ? "bgc: concurrent GC accepted" : "bgc: concurrent GC rejected");
 #else //BACKGROUND_GC
     GCConfig::SetConcurrentGC(false);
 #endif //BACKGROUND_GC

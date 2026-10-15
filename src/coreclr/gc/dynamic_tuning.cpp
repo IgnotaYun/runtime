@@ -3,6 +3,14 @@
 
 #include "gcinternal.h"
 
+// Port bring-up tracing, TARGET_LIBNX only: nx_gc_phase is the PAL hook that
+// every other GC trace line uses, gated on LINUXNX_GC_TRACE at run time.
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#else
+#define nx_gc_phase(phase) ((void)0)
+#endif
+
 #ifdef SERVER_GC
 namespace SVR {
 #else // SERVER_GC
@@ -1690,16 +1698,19 @@ void gc_heap::init_static_data()
     GCConfig::SetGCGen0MaxBudget (gen0_max_size);
 
     // TODO: gen0_max_size has a 200mb cap; gen1_max_size should also have a cap.
+    // The segment-derived ceiling for gen1 (256 MiB SOH segment by default, so
+    // 128 MiB on Workstation 64-bit).
+    size_t gen1_segment_ceiling = max ((size_t)6*1024*1024, Align(soh_segment_size/2));
     size_t gen1_max_size = (size_t)
 #ifdef MULTIPLE_HEAPS
-        max ((size_t)6*1024*1024, Align(soh_segment_size/2));
+        gen1_segment_ceiling;
 #else //MULTIPLE_HEAPS
         (
 #ifdef BACKGROUND_GC
             gc_can_use_concurrent ?
             6*1024*1024 :
 #endif //BACKGROUND_GC
-            max ((size_t)6*1024*1024, Align(soh_segment_size/2))
+            gen1_segment_ceiling
         );
 #endif //MULTIPLE_HEAPS
 
@@ -1723,6 +1734,19 @@ void gc_heap::init_static_data()
 
     dprintf (GTC_LOG, ("gen0 min: %zd, max: %zd, gen1 max: %zd",
         gen0_min_size, gen0_max_size, gen1_max_size));
+
+#ifdef TARGET_LIBNX
+    {
+        // Same numbers as the dprintf above, which this build compiles out
+        // (STRESS_LOG is undefined): with LINUXNX_GC_TRACE=1 they land in the
+        // run log instead. Every ephemeral budget below is derived from them.
+        char nx[128];
+        snprintf (nx, sizeof(nx), "static data: gen0 min %zuM max %zuM, gen1 max %zuM (%s)",
+            gen0_min_size >> 20, gen0_max_size >> 20, gen1_max_size >> 20,
+            gc_can_use_concurrent ? "concurrent" : "blocking");
+        nx_gc_phase (nx);
+    }
+#endif //TARGET_LIBNX
 
     for (int i = latency_level_first; i <= latency_level_last; i++)
     {

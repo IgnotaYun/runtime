@@ -3,6 +3,12 @@
 
 #include "gcinternal.h"
 
+#ifdef TARGET_LIBNX
+extern "C" void nx_gc_phase(const char*);
+#else
+#define nx_gc_phase(phase) ((void)0)
+#endif
+
 #ifdef SERVER_GC
 namespace SVR
 {
@@ -1637,6 +1643,7 @@ bool gc_heap::should_update_end_mark_size()
 void gc_heap::background_mark_phase ()
 {
     verify_mark_array_cleared();
+    nx_gc_phase("bgc: background mark begin");
 
     ScanContext sc;
     sc.thread_number = heap_number;
@@ -3001,6 +3008,7 @@ void gc_heap::start_c_gc()
 void gc_heap::do_background_gc()
 {
     dprintf (2, ("starting a BGC"));
+    nx_gc_phase("bgc: background collection started");
 #ifdef MULTIPLE_HEAPS
     for (int i = 0; i < n_heaps; i++)
     {
@@ -3047,6 +3055,7 @@ void gc_heap::bgc_thread_function()
     bool cooperative_mode = true;
     bgc_thread_id.SetToCurrentThread();
     dprintf (1, ("bgc_thread_id is set to %x", (uint32_t)GCToOSInterface::GetCurrentThreadIdForLogging()));
+    nx_gc_phase("bgc: background GC thread running");
     while (1)
     {
         // Wait for work to do...
@@ -3233,6 +3242,7 @@ void gc_heap::bgc_thread_function()
             gc_background_running = FALSE;
             keep_bgc_threads_p = FALSE;
             background_gc_done_event.Set();
+            nx_gc_phase("bgc: background collection complete");
 
             dprintf (SPINLOCK_LOG, ("bgc Lgc"));
             leave_spin_lock (&gc_lock);
@@ -3714,6 +3724,7 @@ void gc_heap::background_sweep()
     //concurrent_print_time_delta ("finished with mark and start with sweep");
     concurrent_print_time_delta ("Sw");
     dprintf (2, ("---- (GC%zu)Background Sweep Phase ----", VolatileLoad(&settings.gc_index)));
+    nx_gc_phase("bgc: background sweep begin");
 
     bool rebuild_maxgen_fl_p = true;
 
@@ -4254,6 +4265,7 @@ void gc_heap::background_sweep()
 
     //dprintf (GTC_LOG, ("---- (GC%zu)End Background Sweep Phase ----", VolatileLoad(&settings.gc_index)));
     dprintf (GTC_LOG, ("---- (GC%zu)ESw ----", VolatileLoad(&settings.gc_index)));
+    nx_gc_phase("bgc: background sweep end");
 }
 
 #endif //BACKGROUND_GC
