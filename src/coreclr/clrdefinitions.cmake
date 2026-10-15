@@ -152,6 +152,15 @@ if(CLR_CMAKE_TARGET_APPLE OR CLR_CMAKE_TARGET_FREEBSD OR CLR_CMAKE_TARGET_OPENBS
     add_compile_definitions(FEATURE_PERFMAP)
 endif(CLR_CMAKE_TARGET_APPLE OR CLR_CMAKE_TARGET_FREEBSD OR CLR_CMAKE_TARGET_OPENBSD)
 
+# The libnx port has no fault-to-exception path: a managed NullReferenceException
+# in JITed code arrives as a Data Abort that names only an address, and generated
+# code has no symbols. The perf map (DOTNET_PerfMapEnabled) is the way to name the
+# method at that address, so it is enabled here on the same terms as the other
+# Unix targets.
+if(CLR_CMAKE_TARGET_LIBNX)
+    add_compile_definitions(FEATURE_PERFMAP)
+endif(CLR_CMAKE_TARGET_LIBNX)
+
 if(FEATURE_COMWRAPPERS)
     add_compile_definitions(FEATURE_COMWRAPPERS)
 endif(FEATURE_COMWRAPPERS)
