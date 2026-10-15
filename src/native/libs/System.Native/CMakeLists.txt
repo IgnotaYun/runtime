@@ -51,10 +51,17 @@ elseif (CLR_CMAKE_TARGET_LIBNX)
         pal_networking.c
         pal_networkstatistics_wasm.c
         pal_process_libnx.c
-        pal_signal_wasm.c
         pal_threading.c
         pal_uid_wasi.c
     )
+    if (PAL_LIBNX_SHIM_DIR OR CMAKE_C_FLAGS MATCHES "LINUXNX_MIRROR")
+        # Same reason as the console PAL above: the mirror runs on Unix, so the
+        # real signal implementation (including the terminal-invalidation
+        # callback the console asks for) is used instead of the wasm stubs.
+        list (APPEND NATIVE_SOURCES pal_signal.c)
+    else()
+        list (APPEND NATIVE_SOURCES pal_signal_wasm.c)
+    endif()
 else() # WASI
     list (APPEND NATIVE_SOURCES
         pal_dynamicload_wasm.c
@@ -116,7 +123,13 @@ else()
         pal_log.c
         pal_iossupportversion.c)
 
-    if (CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI OR CLR_CMAKE_TARGET_LIBNX)
+    if (CLR_CMAKE_TARGET_LIBNX AND (PAL_LIBNX_SHIM_DIR OR CMAKE_C_FLAGS MATCHES "LINUXNX_MIRROR"))
+        # The linuxnx mirror is TARGET_OS=libnx but runs as an ordinary Unix
+        # process, so the termios/ioctl console PAL is the right implementation;
+        # the wasm stubs abort (assert_msg "Not supported on Wasm") as soon as the
+        # process has a tty, which made mirror runs require redirected stdio.
+        list (APPEND NATIVE_SOURCES pal_console.c)
+    elseif (CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI OR CLR_CMAKE_TARGET_LIBNX)
         list (APPEND NATIVE_SOURCES pal_console_wasm.c)
     else()
         list (APPEND NATIVE_SOURCES pal_console.c)
