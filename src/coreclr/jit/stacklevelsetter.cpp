@@ -331,13 +331,19 @@ void StackLevelSetter::SetThrowHelperBlocks(GenTree* node, BasicBlock* block)
         break;
 #endif
 
-#if defined(TARGET_WASM)
-        // TODO-WASM: add other opers that imply null checks
+#if defined(TARGET_WASM) || defined(TARGET_LIBNX)
+        // Targets with no fault-to-exception path check null references in
+        // software (see 'Software null checks' in notes/port-status.md): the
+        // dereference is guarded and throws the managed exception instead of
+        // faulting. Every such dereference needs the throw helper block, which is
+        // what these cases install. The list is the WASM one; libnx uses it for
+        // the same reason. TODO: extend it to any other oper that can dereference.
         case GT_NULLCHECK:
             SetThrowHelperBlock(SCK_NULL_CHECK, block);
             break;
 
         case GT_IND:
+        case GT_BLK:
         case GT_STORE_BLK:
         case GT_STOREIND:
             if ((node->gtFlags & GTF_IND_NONFAULTING) == 0)
@@ -352,7 +358,7 @@ void StackLevelSetter::SetThrowHelperBlocks(GenTree* node, BasicBlock* block)
                 SetThrowHelperBlock(SCK_NULL_CHECK, block);
             }
             break;
-#endif // defined(TARGET_WASM)
+#endif // defined(TARGET_WASM) || defined(TARGET_LIBNX)
 
         default: // Other opers can target throw only due to overflow.
             break;

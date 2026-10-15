@@ -243,6 +243,17 @@ public:
 
     void genEmitCallWithCurrentGC(EmitCallParams& callParams);
 
+#ifdef TARGET_LIBNX
+    // Software null check: compare the reference an access goes through and jump
+    // to the null-check throw helper when the access could land in the protected
+    // null page. The arm64 memory emitter and the call path call these, which is
+    // why they are public. See 'Software null checks' in notes/port-status.md.
+    void genNullCheckForAddress(regNumber addressReg, size_t maxReferenceValue);
+    size_t genMaxReferenceValueForNullCheck(GenTreeIndir* indir);
+    size_t genMaxReferenceValueForNullCheck();
+    size_t genMaxReferenceValueForNullCheck(ssize_t offset);
+#endif
+
 protected:
     void genEmitHelperCall(unsigned helper, int argSize, emitAttr retSize, regNumber callTarget = REG_NA);
 

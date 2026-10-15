@@ -1388,6 +1388,34 @@ void CodeGen::genCodeForNullCheck(GenTreeIndir* tree)
 {
 #ifdef TARGET_ARM
     assert(!"GT_NULLCHECK isn't supported for Arm32; use GT_IND.");
+#elif defined(TARGET_LIBNX)
+    // Software null check: there is no fault-to-exception path on this target, so
+    // probing with a load (what the other targets do) would kill the process
+    // instead of throwing. Compare and jump to the throw helper.
+    //
+    // Compare the *base*, not the address node. The address of a GT_NULLCHECK is
+    // often contained: the JIT's null check for a callvirt on a struct field, or
+    // on a value type whose address is a stack slot, is a contained GT_LEA /
+    // GT_LCL_ADDR, and a contained address has no register of its own.
+    // GetRegNum() on it is REG_NA or, worse, a stale register, and comparing that
+    // to zero throws for a valid access. That is exactly how the spurious
+    // Monocle.Tween.Create null reference appeared: its foreach over List<T>
+    // callvirts the struct enumerator in a local, so every one of those null
+    // checks compared a register that held nothing to do with the enumerator.
+    // Base() gives the reference the access really goes through (and returns the
+    // address itself when it is not an address-mode), matching what the
+    // load/store emitter's guard checks. A contained base is a stack slot, which
+    // cannot be null, so it needs no check at all.
+    assert(tree->OperIs(GT_NULLCHECK));
+
+    genConsumeAddress(tree->Addr());
+
+    GenTree* nullCheckBase = tree->Base();
+    if ((nullCheckBase != nullptr) && !nullCheckBase->isContained() &&
+        (nullCheckBase->GetRegNum() != REG_NA))
+    {
+        genNullCheckForAddress(nullCheckBase->GetRegNum(), genMaxReferenceValueForNullCheck(tree));
+    }
 #else
     assert(tree->OperIs(GT_NULLCHECK));
     GenTree* op1 = tree->gtOp1;
@@ -1398,6 +1426,140 @@ void CodeGen::genCodeForNullCheck(GenTreeIndir* tree)
     GetEmitter()->emitInsLoadStoreOp(ins_Load(tree->TypeGet()), emitActualTypeSize(tree), targetReg, tree);
 #endif
 }
+
+#ifdef TARGET_LIBNX
+//---------------------------------------------------------------------
+// genMaxReferenceValueForNullCheck - the largest reference value for which the
+//                                    guarded access would still fault on a target
+//                                    that translates faults
+//
+// Arguments:
+//    indir - the indirection whose null check is being emitted
+//
+// Return value:
+//    The unsigned bound the guarded register has to be compared against.
+//
+// Notes:
+//    This is the arm64 form of what the WASM target's explicit null check does by
+//    comparing the *address* against compMaxUncheckedOffsetForNullObject: an
+//    access whose address is below that bound is inside the protected null page
+//    and faults on every target that can translate a fault, so it is exactly the
+//    set of addresses that has to become a NullReferenceException here. arm64 has
+//    the *reference* in a register, not the address, so the folded displacement is
+//    subtracted: Base + Offset <= max is Base <= max - Offset.
+//
+//    Two deliberate approximations, both in the safe direction:
+//
+//    * an index register only ever makes the address larger, and it is a scaled
+//      index rather than an address, so it is ignored. Testing the base can only
+//      be more eager than testing the full address, never less: a reference below
+//      the bound is either null or corrupt, and never a valid object.
+//    * the bound is rounded down to the largest immediate arm64's CMP can encode
+//      (a 12-bit value optionally shifted left by 12). The loss is under 4 KB at
+//      the very top of the null page, which no reference value can be.
+//
+//    An offset at or beyond the bound cannot put the access in the null page at
+//    all, and the JIT only folds an offset that large into an access whose
+//    reference it has explicitly null-checked; testing for an exactly zero
+//    reference is what that check means, so the fallback matches it.
+//
+size_t CodeGen::genMaxReferenceValueForNullCheck(GenTreeIndir* indir)
+{
+    // Debug knob: LINUXNX_NULL_BOUND overrides the computed bound for every guarded
+    // access, which is how the value a given access actually holds was measured
+    // (bisecting the bound until the run stops throwing pins it down). Read once.
+    {
+        static int boundOverride = -2;
+        if (boundOverride == -2)
+        {
+            const char* env = getenv("LINUXNX_NULL_BOUND");
+            boundOverride = (env != nullptr) ? (int)strtoul(env, nullptr, 0) : -1;
+        }
+        if (boundOverride >= 0)
+        {
+            return (size_t)boundOverride;
+        }
+    }
+
+    ssize_t offset = 0;
+    if (indir->isIndirAddrMode())
+    {
+        offset = indir->Addr()->AsAddrMode()->Offset();
+
+        // Which operand is the address is only promised when the index is scaled:
+        // gtScale applies to Index, so a scale above 1 means Index is the scaled
+        // offset and Base is the address. At scale 1 the JIT promises nothing, and
+        // arm64 lowering does fold a computed index*scale into Base while keeping the
+        // pointer in Index - MonoMod's `vtbl[VtableIndexICorJitInfoAllocMem]` compiled
+        // to `[index<<3 + vtbl]`, so a bound applied there tested the index (a bound of
+        // 2047 threw a NullReferenceException for a perfectly valid vtable store).
+        // Keep the strict zero test for that shape.
+        if (indir->HasIndex() && (indir->Addr()->AsAddrMode()->GetScale() == 1))
+        {
+            return 0;
+        }
+    }
+
+    return genMaxReferenceValueForNullCheck(offset);
+}
+
+//---------------------------------------------------------------------
+// genMaxReferenceValueForNullCheck - the bound for a check on a reference that is
+//                                    dereferenced at a known displacement
+//
+// Arguments:
+//    offset - the displacement the access applies to the reference
+//
+// Return value:
+//    The unsigned bound the reference has to be compared against.
+//
+size_t CodeGen::genMaxReferenceValueForNullCheck(ssize_t offset)
+{
+    const size_t maxUnchecked = m_compiler->compMaxUncheckedOffsetForNullObject;
+
+    if ((offset < 0) || ((size_t)offset >= maxUnchecked))
+    {
+        return 0;
+    }
+
+    size_t bound = maxUnchecked - (size_t)offset;
+    if (bound > 0xFFF)
+    {
+        bound &= ~(size_t)0xFFF;
+    }
+
+    return bound;
+}
+
+//---------------------------------------------------------------------
+// genMaxReferenceValueForNullCheck - the bound for a check on a reference that is
+//                                    dereferenced at offset zero (a call's "this")
+//
+size_t CodeGen::genMaxReferenceValueForNullCheck()
+{
+    return genMaxReferenceValueForNullCheck(static_cast<ssize_t>(0));
+}
+
+//---------------------------------------------------------------------
+// genNullCheckForAddress - throw a NullReferenceException for a null access
+//
+// Arguments
+//    addressReg       - register holding the reference the access goes through
+//    maxReferenceValue - largest value to treat as a null reference
+//
+// Notes
+//    Software replacement for the fault that other targets take. The jump target
+//    is the method's null-check throw helper, which StackLevelSetter installs for
+//    any block that contains a dereference (see the TARGET_LIBNX cases there).
+//
+void CodeGen::genNullCheckForAddress(regNumber addressReg, size_t maxReferenceValue)
+{
+    assert(addressReg != REG_NA);
+
+    GetEmitter()->emitIns_R_I(INS_cmp, EA_8BYTE, addressReg, maxReferenceValue);
+    genJumpToThrowHlpBlk(EJ_ls, SCK_NULL_CHECK);
+}
+#endif // TARGET_LIBNX
 
 //------------------------------------------------------------------------
 // genCodeForShift: Generates the code sequence for a GenTree node that
@@ -3147,6 +3309,26 @@ void CodeGen::genCall(GenTreeCall* call)
         const regNumber tmpReg = internalRegisters.Extract(call);
         GetEmitter()->emitIns_R_R_I(INS_ldr, EA_4BYTE, tmpReg, regThis, 0);
 #elif defined(TARGET_ARM64)
+#if defined(TARGET_LIBNX)
+        // The check below is a load into the zero register: it takes a fault on a null
+        // "this", which is the check on every target that can turn a fault into an
+        // exception. libnx cannot (no POSIX signals, no ucontext), so that load would
+        // kill the process instead of throwing the NullReferenceException the rest of
+        // the runtime expects. Emit the target's software null check instead - the same
+        // compare-and-branch the guarded loads and stores use, which throws from this
+        // block's SCK_NULL_CHECK helper (StackLevelSetter installs it for any call with
+        // GTF_CALL_NULLCHECK, precisely for this). The reference here is the argument
+        // itself, so there is no operand ambiguity, and a receiver that lives in a stack
+        // slot arrives as its (high) address and never trips the bound.
+        //
+        // The probe stays as the fallback for a block without that helper: keeping the
+        // old behavior is better than emitting a jump with nowhere to go.
+        if (m_compiler->fgGetExcptnTarget(SCK_NULL_CHECK, m_compiler->compCurBB) != nullptr)
+        {
+            genNullCheckForAddress(regThis, genMaxReferenceValueForNullCheck());
+        }
+        else
+#endif // TARGET_LIBNX
         GetEmitter()->emitIns_R_R_I(INS_ldr, EA_4BYTE, REG_ZR, regThis, 0);
 #endif // TARGET*
     }

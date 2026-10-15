@@ -15030,6 +15030,67 @@ void emitter::emitInsLoadStoreOp(instruction ins, emitAttr attr, regNumber dataR
 {
     GenTree* addr = indir->Addr();
 
+// A/B experiment: this hook emits a compare and a block jump from inside the
+// load/store emitter. Disabled to test whether the nested emit is what corrupts
+// the guarded access (the GT_NULLCHECK path in genCodeForNullCheck stays on, so
+// callvirt null checks still throw).
+// (The A/B showed the wild guest-access crashes happen with this off as well, so
+// the nested emit is not their cause; the define stays here as the switch.)
+//#define LIBNX_NO_EMIT_STORE_NULL_CHECK 1
+#if defined(TARGET_LIBNX) && !defined(LIBNX_NO_EMIT_STORE_NULL_CHECK)
+    // Software null check. This target has no fault-to-exception path (libnx has
+    // no signals and no ucontext, so the CoreCLR PAL cannot turn a fault into the
+    // managed NullReferenceException that the rest of the runtime expects): a
+    // dereference of null, or of a bad pointer, must not fault here. Guard the
+    // access and jump to the null-check throw helper instead, which is the same
+    // model the WASM target uses.
+    //
+    // Every arm64 memory access of every shape comes through this function, so
+    // this is the one place the guard has to be emitted. The JIT marks addresses
+    // it has proven safe with GTF_IND_NONFAULTING; those are skipped.
+    //
+    // Do not skip a *contained* address. Base() flattens an address mode to the
+    // reference the access really goes through, and an address mode - [obj+disp],
+    // which is what a field access on a register-held reference, an array element
+    // and a length load all look like - is contained while its base is a genuine
+    // reference that can be null. Skipping those left the target's most common
+    // shapes unguarded, and on this target an unguarded access is not an
+    // exception, it is a dead process: the bjam run's crash report is a Data Abort
+    // at 0x1b3 - a null base plus a field offset - with the faulting PC in JIT'ed
+    // code and RhpNewArrayFast as the last helper (see notes/port-status.md).
+    //
+    // The guard tests the reference against the bound that says the access lands
+    // in the protected null page (genMaxReferenceValueForNullCheck), not against
+    // zero: the JIT folds offsets up to compMaxUncheckedOffsetForNullObject into
+    // an access and leaves the fault to be the null check, so anything below that
+    // bound - including a pre-computed interior pointer, whose register is no
+    // longer zero - has to throw here.
+    // Only a base that is itself contained (a stack slot, a TLS block) cannot be
+    // null and needs no check.
+    if ((indir->gtFlags & GTF_IND_NONFAULTING) == 0)
+    {
+        GenTree* base = indir->Base();
+
+        if ((base != nullptr) && (base->GetRegNum() != REG_NA) && !base->isContained())
+        {
+            // Only when this block really has the null-check block to jump to:
+            // genJumpToThrowHlpBlk dereferences the target it looks up, and the
+            // emitter must not emit a jump that has nowhere to go.
+            if (m_compiler->fgGetExcptnTarget(SCK_NULL_CHECK, m_compiler->compCurBB) != nullptr)
+            {
+                codeGen->genNullCheckForAddress(base->GetRegNum(),
+                                                codeGen->genMaxReferenceValueForNullCheck(indir));
+            }
+#ifdef DEBUG
+            else
+            {
+                printf("libnx-nullcheck: no throw helper for %s (guard skipped)\n", m_compiler->info.compFullName);
+            }
+#endif
+        }
+    }
+#endif // TARGET_LIBNX
+
     if (addr->isContained())
     {
         assert(addr->OperIs(GT_LCL_ADDR, GT_LEA) || (addr->IsIconHandle(GTF_ICON_TLS_HDL)));
