@@ -1592,14 +1592,15 @@ void ExecutableMemoryAllocator::Initialize()
 {
     // Enable the executable memory allocator on 64-bit platforms only
     // because 32-bit platforms have limited amount of virtual address space.
-#if defined(__SWITCH__)
-    // No JIT on libnx and the fake-mmap region is real memory: skip the 1GB
-    // executable reserve entirely.
-#else
-#ifdef HOST_64BIT
+    // The libnx fake-mmap region is real memory (reserve == commit), so this
+    // 1 GB address-space reservation would cost 1 GB of RAM; generated code
+    // comes from the double-mapped CodeMemory arena instead
+    // (doublemapping-libnx.cpp), leaving the PAL window an unreachable
+    // fallback. Keyed on the port's own macro so the device *and* the linuxnx
+    // mirror (built with host clang, no __SWITCH__) both skip it.
+#if defined(HOST_64BIT) && !defined(TARGET_LIBNX)
     TryReserveInitialMemory();
-#endif // HOST_64BIT
-#endif // __SWITCH__
+#endif // HOST_64BIT && !TARGET_LIBNX
 
 }
 

@@ -21,12 +21,29 @@ static pthread_mutex_t page_table_lock = PTHREAD_MUTEX_INITIALIZER;
 #include <stdio.h>
 #include <switch.h>
 
+// Provided by the NRO when it is present (clrhost's io_util.c): routes these
+// lines into the SD card log as well as svcOutputDebugString. Weak so the PAL
+// still links into hosts that do not have it (the linuxnx mirror, the AOT and
+// interpreter flavors).
+__attribute__((weak)) void nx_log_line(const char *line);
+
+static void nx_log_emit(const char *buffer)
+{
+    if (nx_log_line)
+    {
+        nx_log_line(buffer);
+        return;
+    }
+
+    svcOutputDebugString(buffer, strlen(buffer));
+}
+
 void nx_fakemmap_init(size_t memory_start, size_t memory_end)
 {
     {
         char buf[96];
         int n = snprintf(buf, sizeof(buf), "nxmmap: init start=%zx end=%zx\n", memory_start, memory_end);
-        svcOutputDebugString(buf, (size_t)n);
+        if (n > 0) nx_log_emit(buf);
     }
     page_table = NULL;
     heap_start = 0;
@@ -111,6 +128,16 @@ static void* alloc_range(size_t size)
     return NULL;
 }
 
+// Unmapping a range that is not exactly a range we handed out is the classic way
+// an allocator corrupts itself: the pages go back on the free list while their
+// contents are still live, and the next allocation lands on top of them. glibc's
+// free never does that to this shim, but newlib's memalign/aligned_alloc path and
+// anything that adjusts a pointer inside a mapping can, so the callers are
+// checked here instead of trusted. A rejected release is reported rather than
+// silently ignored: a live log line is the only way to spot it, since the
+// corruption it would cause shows up somewhere else entirely.
+static unsigned bad_unmap_calls;
+
 static void free_range(void* addr, size_t size)
 {
     if (!page_table || !addr || !size)
@@ -120,6 +147,34 @@ static void free_range(void* addr, size_t size)
     int start = page_index(addr);
 
     pthread_mutex_lock(&page_table_lock);
+
+    bool interior = ((uintptr_t)addr != heap_start + (uintptr_t)start * NX_MMAP_PAGE_SIZE) || (start < 0);
+    bool inrange = (start >= 0) && ((size_t)start + num_pages <= total_pages);
+    bool allset = inrange;
+
+    for (int i = 0; allset && i < (int)num_pages; i++)
+    {
+        allset = is_page_set(start + i);
+    }
+
+    if (interior || !inrange || !allset)
+    {
+        if ((bad_unmap_calls++ < 8) || (bad_unmap_calls % 256) == 0)
+        {
+            char buf[160];
+            int n = snprintf(buf, sizeof(buf),
+                             "nxmmap: refusing unmap of %zu bytes at %p (%s%s%s, #%u)\n",
+                             size, addr,
+                             interior ? "not a mapping start" : "",
+                             inrange ? "" : " outside the region",
+                             allset ? "" : " pages not allocated",
+                             bad_unmap_calls);
+            if (n > 0) nx_log_emit(buf);
+        }
+        pthread_mutex_unlock(&page_table_lock);
+        return;
+    }
+
     for (size_t i = 0; i < num_pages && (size_t)(start + i) < total_pages; i++)
     {
         set_page(start + (int)i, 0);
@@ -132,7 +187,55 @@ static void nxlog(const char* what, size_t a, size_t b)
 {
     char buf[128];
     int n = snprintf(buf, sizeof(buf), "nxmmap: %s %zu %zu (used=%zuMB)\n", what, a, b, nx_fakemmap_used()/1024/1024);
-    svcOutputDebugString(buf, (size_t)n);
+    if (n > 0) nx_log_emit(buf);
+}
+
+// Ranges the kernel would have dropped and re-zeroed for us. Rate limited: the
+// GC does this every time a heap segment or region is trimmed, which is far too
+// often to log all of it, but a run's first few calls plus a periodic count are
+// enough to see whether the path is live.
+static unsigned decommit_calls;
+static size_t decommit_bytes;
+
+static void nxlog_decommit(const char* what, void* address, size_t length)
+{
+    decommit_calls++;
+    decommit_bytes += length;
+
+    if (decommit_calls <= 4 || (decommit_calls % 256) == 0)
+    {
+        char buf[128];
+        int n = snprintf(buf, sizeof(buf),
+                         "nxmmap: %s %zu bytes at %p (#%u, %zuMB total)\n",
+                         what, length, address, decommit_calls, decommit_bytes / 1048576);
+        if (n > 0) nx_log_emit(buf);
+    }
+}
+
+// Drop the contents of a range that is already ours. This is what the kernel
+// does for the two calls below, and the fake region has to answer the same way:
+//
+//   * gcenv.unix.cpp's GCToOSInterface::VirtualDecommit maps the range with
+//     MAP_FIXED|MAP_ANON (PROT_NONE) to decommit it, and explicitly says why:
+//     "GC depends on re-committed pages to be zeroed-out". The matching commit
+//     is mprotect(PROT_READ|WRITE), which is a no-op here.
+//   * madvise(MADV_DONTNEED / MADV_FREE) tells the kernel the contents are
+//     expendable, and MADV_DONTNEED promises zeroes on the next access.
+//
+// The pages must stay allocated: the GC re-commits the same addresses later, so
+// handing them back to the allocator on decommit would let another allocation
+// take them. Reserve == commit already meant the pages are ours; all a decommit
+// can mean here is that the bytes go away.
+static int nx_fakemmap_drop_contents(void* address, size_t length)
+{
+    if (address == NULL || length == 0)
+        return 0;
+
+    if (!nx_fakemmap_owns(address) || !nx_fakemmap_owns((uint8_t*)address + length - 1))
+        return -1;
+
+    memset(address, 0, length);
+    return 0;
 }
 
 void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
@@ -141,7 +244,18 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
     if (addr != NULL)
     {
-        // MAP_FIXED-style requests cannot be satisfied from the managed region.
+        // A page-fixed anonymous mapping of a range inside the fake region is a
+        // decommit/reset of memory we already own, not a new mapping: drop the
+        // contents in place and report success so the caller's later commit sees
+        // zeroes, which is what it is written against. Anything else fixed -
+        // file-backed, or outside the region - still cannot be satisfied here.
+        if ((fd < 0) && ((flags & (MAP_FIXED | MAP_ANON)) == (MAP_FIXED | MAP_ANON)) &&
+            (nx_fakemmap_drop_contents(addr, length) == 0))
+        {
+            nxlog_decommit("decommit mmap", addr, length);
+            return addr;
+        }
+
         errno = ENOTSUP;
         return MAP_FAILED;
     }
@@ -159,7 +273,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
         nxlog("mmap big", length, (size_t)ptr);
         char buf[64];
         int n = snprintf(buf, sizeof(buf), "  caller=%p\n", __builtin_return_address(0));
-        svcOutputDebugString(buf, (size_t)n);
+        if (n > 0) nx_log_emit(buf);
     }
     memset(ptr, 0, length);
 
@@ -207,12 +321,26 @@ int mprotect(void* addr, size_t length, int prot)
 
 int madvise(void* addr, size_t length, int advice)
 {
-    (void)addr; (void)length; (void)advice;
+    if ((advice == MADV_DONTNEED) || (advice == MADV_FREE))
+    {
+        if (nx_fakemmap_drop_contents(addr, length) == 0)
+        {
+            nxlog_decommit("madvise drop", addr, length);
+        }
+    }
+
     return 0;
 }
 
 int posix_madvise(void* addr, size_t length, int advice)
 {
-    (void)addr; (void)length; (void)advice;
+    if (advice == POSIX_MADV_DONTNEED)
+    {
+        if (nx_fakemmap_drop_contents(addr, length) == 0)
+        {
+            nxlog_decommit("posix_madvise drop", addr, length);
+        }
+    }
+
     return 0;
 }

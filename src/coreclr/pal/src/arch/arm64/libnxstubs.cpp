@@ -47,6 +47,11 @@ DBG_DebugBreak()
 
 /* unwind */
 
+#if !defined(LINUXNX_MIRROR)
+// The linuxnx profiling mirror compiles the real pal/src/exception/signal.cpp,
+// pal/src/thread/context.cpp and the arm64 signal-handler helpers, which own
+// these symbols. Only the device target (no POSIX signals, no ucontext) needs
+// the stubs below.
 void ExecuteHandlerOnCustomStack(int code, siginfo_t *siginfo, void *context, size_t sp, SignalHandlerWorkerReturnPoint* returnPoint)
 {
     _ASSERT(!"ExecuteHandlerOnCustomStack not implemented on libnx");
@@ -89,6 +94,7 @@ DWORD CONTEXTGetExceptionCodeForSignal(const siginfo_t *siginfo,
     _ASSERT(!"CONTEXTGetExceptionCodeForSignal not implemented on libnx");
     return 0;
 }
+#endif // !LINUXNX_MIRROR
 
 // WIN32 SEH entry — normally in seh-unwind.cpp which we exclude on libnx.
 // Mirrors that file's RaiseException: allocate EXCEPTION_RECORD + CONTEXT,
@@ -234,15 +240,47 @@ static_assert(offsetof(CONTEXT, Sp) == offsetof(LibnxUnwindContext, Sp), "libnx 
 static_assert(offsetof(CONTEXT, Pc) == offsetof(LibnxUnwindContext, Pc), "libnx unwind context mismatch");
 static_assert(offsetof(CONTEXT, V) == offsetof(LibnxUnwindContext, V), "libnx unwind context mismatch");
 
+#if defined(LINUXNX_MIRROR)
+// Normally defined in pal/src/exception/seh-unwind.cpp, which is excluded on
+// libnx (the device uses the CFI unwinder below instead of libunwind). The
+// mirror compiles signal.cpp, which writes these from the signal worker frame.
+int g_hardware_exception_context_locvar_offset = 0;
+int g_inject_activation_context_locvar_offset = 0;
+extern void* g_SEHProcessExceptionReturnAddress;
+extern void* g_InvokeActivationHandlerReturnAddress;
+#endif
+
 extern "C" PALIMPORT BOOL PALAPI
 PAL_VirtualUnwind(CONTEXT *context)
 {
+#if defined(LINUXNX_MIRROR)
+    // The mirror compiles the real pal/src/exception/signal.cpp, which saves the
+    // hardware-exception context in a local of the signal worker frame and
+    // records its frame-pointer offset. pal/src/exception/seh-unwind.cpp (also
+    // excluded on libnx) uses these to skip the signal trampoline when the
+    // exception dispatcher unwinds out of SEHProcessException; reproduce that
+    // here so managed handlers below the faulting frame are reachable.
+    DWORD64 curPc = CONTEXTGetPC(context);
+    if ((void*)curPc == g_SEHProcessExceptionReturnAddress)
+    {
+        CONTEXT *exceptionContext = *(CONTEXT**)(CONTEXTGetFP(context) + g_hardware_exception_context_locvar_offset);
+        memcpy(context, exceptionContext, sizeof(CONTEXT));
+        return TRUE;
+    }
+    if ((void*)curPc == g_InvokeActivationHandlerReturnAddress)
+    {
+        CONTEXT *activationContext = *(CONTEXT**)(CONTEXTGetFP(context) + g_inject_activation_context_locvar_offset);
+        memcpy(context, activationContext, sizeof(CONTEXT));
+        return TRUE;
+    }
+#endif // LINUXNX_MIRROR
     return libnxcfi::LibnxVirtualUnwindCfi((LibnxUnwindContext *)context) ? TRUE : FALSE;
 }
 
 // Signal-handling surface — pal/src/exception/signal.cpp is excluded on libnx.
 // Stubs return success/no-op so the PAL init/shutdown paths continue.
 // These are C++ symbols (declared without extern "C" in pal/src/include/pal/signal.hpp).
+#if !defined(LINUXNX_MIRROR)
 BOOL SEHInitializeSignals(CorUnix::CPalThread* pthrCurrent, DWORD flags)
 {
     (void)pthrCurrent; (void)flags;
@@ -263,7 +301,11 @@ PAL_EnableCrashReportBeforeSignalChaining(void)
 {
     // No-op: libnx has no signal delivery.
 }
+#endif // !LINUXNX_MIRROR
 
+// The mirror keeps these two libnx implementations: pal/src/thread/context.cpp
+// only defines them for TARGET_LINUX builds, and the mirror is TARGET_LIBNX on a
+// Linux host.
 // Per-thread context retrieval. Normally implemented via ptrace on Unix.
 extern "C" PALIMPORT BOOL PALAPI
 GetThreadContext(IN HANDLE hThread, IN OUT LPCONTEXT lpContext)
@@ -381,7 +423,16 @@ extern "C" int posix_memalign(void **memptr, size_t alignment, size_t size)
 {
     if (memptr == NULL || (alignment & (alignment - 1)) != 0 || alignment < sizeof(void*))
         return EINVAL;
-    *memptr = aligned_alloc(alignment, size);
+    // C11's aligned_alloc requires size to be an integral multiple of the
+    // alignment; posix_memalign explicitly allows any size. Passing the request
+    // straight through is undefined behaviour for every non-multiple size, which
+    // is most of them (the runtime asks for object-sized blocks). Round up to
+    // what glibc's implementation allocates anyway, and keep the result
+    // free()-able, as both contracts require.
+    size_t rounded = (size + alignment - 1) & ~(alignment - 1);
+    if (rounded < size)
+        return ENOMEM; // overflow
+    *memptr = aligned_alloc(alignment, rounded);
     return *memptr ? 0 : ENOMEM;
 }
 
@@ -450,12 +501,15 @@ extern "C" int CorDBGetInterface(DebugInterface** rcInterface)
     return (int)0x80004005; // E_FAIL
 }
 
+#if !defined(LINUXNX_MIRROR)
 // InjectActivationInternal: signal.cpp is excluded for libnx. Activation
 // injection (thread hijacking for GC suspension) needs signals; not available.
+// (The mirror compiles signal.cpp, which provides the real one.)
 CorUnix::PAL_ERROR InjectActivationInternal(CorUnix::CPalThread* pThread)
 {
     return ERROR_NOT_SUPPORTED;
 }
+#endif // !LINUXNX_MIRROR
 
 // Temporary EE startup stage logging for bring-up debugging (declared in
 // vm/libnx context, called from ceemain.cpp).
@@ -652,6 +706,18 @@ extern "C" void libnx_revthunk_log(const char* src, int found)
 
 extern "C" void nx_gc_phase(const char* phase)
 {
+    // Port bring-up tracing, TARGET_LIBNX only. Off unless a run opts in with
+    // LINUXNX_GC_TRACE=1: on the mirror every line is a write to stderr, and on
+    // the device libnx_log_to_file flushes the log file per line. clrhost sets
+    // the variable from its own logging flag, so on an NRO /switch/clrhost/log.txt
+    // (presence) is what turns this on.
+    static const bool enabled = []() {
+        const char* value = getenv("LINUXNX_GC_TRACE");
+        return value != nullptr && strcmp(value, "1") == 0;
+    }();
+    if (!enabled)
+        return;
+
     char buf[96];
     int n = snprintf(buf, sizeof(buf), "gc: %s\n", phase);
     svcOutputDebugString(buf, (size_t)n);

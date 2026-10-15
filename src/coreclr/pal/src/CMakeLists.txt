@@ -148,6 +148,7 @@ if (CLR_CMAKE_TARGET_LIBNX)
   list(APPEND PLATFORM_SOURCES
     arch/${PAL_ARCH_SOURCES_DIR}/libnxstubs.cpp
     libnx/nx_mmap.c
+    libnx/nx_pal_stubs.cpp
   )
   if (NOT DEFINED PAL_LIBNX_SHIM_DIR)
     # linuxnx profiling mirror keeps glibc's real dlopen/dladdr/dlvsym.
@@ -161,6 +162,17 @@ if (CLR_CMAKE_TARGET_LIBNX)
   if (DEFINED PAL_LIBNX_SHIM_DIR)
     list(APPEND PLATFORM_SOURCES ${PAL_LIBNX_SHIM_DIR}/src/switch_shim.c)
     include_directories(BEFORE ${PAL_LIBNX_SHIM_DIR}/include)
+    # The mirror runs on a real Linux host, so it also gets the Unix exception
+    # surface that the device target has to exclude: signal.cpp maps hardware
+    # faults to managed exceptions, context.cpp converts Linux ucontext to the
+    # aarch64 CONTEXT, and the arm64 helpers run the handler on a custom stack.
+    # libnxstubs.cpp keeps its no-op versions of those symbols for the device.
+    list(APPEND PLATFORM_SOURCES
+      exception/signal.cpp
+      thread/context.cpp
+      arch/${PAL_ARCH_SOURCES_DIR}/callsignalhandlerwrapper.S
+      arch/${PAL_ARCH_SOURCES_DIR}/signalhandlerhelper.cpp
+    )
   endif()
 endif()
 

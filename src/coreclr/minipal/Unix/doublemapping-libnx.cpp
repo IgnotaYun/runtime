@@ -26,8 +26,10 @@ extern "C"
 {
 #include <switch/result.h>
 #include <switch/kernel/jit.h>
+#include <switch/kernel/svc.h>
 #include <switch/arm/cache.h>
 }
+#include <stdio.h>
 #endif
 
 namespace
@@ -149,6 +151,23 @@ bool VMToOSInterface::CreateDoubleMemoryMapper(void** pHandle, size_t* pMaxExecu
     // ranges without destroying data on repeated Commit calls.
     memset(mapper->rw, 0, mapper->size);
     armDCacheFlush(mapper->rw, mapper->size);
+
+    // Which virtual addresses the guest's own generated code lives in. Without
+    // this an invalid-access report from a host is a bare number; with it, a
+    // fault address can be placed inside (or outside) the code arenas. Once per
+    // boot, so it costs nothing.
+    {
+        char buffer[160];
+        int length = snprintf(
+            buffer,
+            sizeof(buffer),
+            "coreclr jit arena: rw=%p rx=%p size=0x%zx\n",
+            static_cast<void*>(mapper->rw),
+            static_cast<void*>(mapper->rx),
+            mapper->size);
+
+        svcOutputDebugString(buffer, static_cast<size_t>(length));
+    }
 #endif
 
     g_mapper = mapper;
