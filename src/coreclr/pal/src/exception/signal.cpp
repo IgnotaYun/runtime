@@ -159,6 +159,26 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
 {
     TRACE("Initializing signal handlers %04x\n", flags);
 
+#if defined(TARGET_LIBNX) && defined(LINUXNX_MIRROR)
+    // The shipping libnx build has no POSIX signals, so the device never turns a
+    // hardware fault into a managed exception (see arch/arm64/libnxstubs.cpp).
+    // The profiling mirror is built on a real Linux host and can, which is what
+    // makes mod-code faults debuggable and survivable there:
+    //
+    //   LINUXNX_MANAGED_FAULTS=1 <runner> <dir> <assembly>
+    //
+    // It is opt-in because it is less faithful than the device. Without it the
+    // fault signals keep their default action - a null-reference dereference that
+    // the JIT failed to guard is fatal here exactly as it is on the device, which
+    // is how a missing software null check (see 'Software null checks' in
+    // notes/port-status.md) is reproduced on the mirror. Everything the runtime
+    // itself needs is still installed either way: in particular the
+    // thread-suspension activation signal below, whose absence makes the first
+    // hijack kill the process.
+    const char* managedFaultsEnv = getenv("LINUXNX_MANAGED_FAULTS");
+    const bool translateFaults = (managedFaultsEnv != nullptr) && (strcmp(managedFaultsEnv, "1") == 0);
+#endif
+
 #if !HAVE_MACH_EXCEPTIONS
     g_enable_alternate_stack_check = false;
 
@@ -188,10 +208,15 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
 
            see sigaction man page for more details
            */
-        handle_signal(SIGILL, sigill_handler, &g_previous_sigill);
-        handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe);
-        handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus);
-        handle_signal(SIGABRT, sigabrt_handler, &g_previous_sigabrt);
+#if defined(TARGET_LIBNX) && defined(LINUXNX_MIRROR)
+        if (translateFaults)
+#endif
+        {
+            handle_signal(SIGILL, sigill_handler, &g_previous_sigill);
+            handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe);
+            handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus);
+            handle_signal(SIGABRT, sigabrt_handler, &g_previous_sigabrt);
+        }
         // We don't setup a handler for SIGINT/SIGQUIT when those signals are ignored.
         // Otherwise our child processes would reset to the default on exec causing them
         // to terminate on these signals.
@@ -199,8 +224,15 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
         handle_signal(SIGQUIT, sigquit_handler, &g_previous_sigquit, 0 /* additionalFlags */, true /* skipIgnored */);
 
 #if HAVE_MACH_EXCEPTIONS || !HAVE_SIGALTSTACK
+#if defined(TARGET_LIBNX) && defined(LINUXNX_MIRROR)
+        if (translateFaults)
+#endif
         handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv);
 #else
+#if defined(TARGET_LIBNX) && defined(LINUXNX_MIRROR)
+        if (translateFaults)
+        {
+#endif
         handle_signal(SIGTRAP, sigtrap_handler, &g_previous_sigtrap);
         int additionalFlagsForSigSegv = 0;
 #ifndef TARGET_SUNOS
@@ -240,6 +272,9 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
 #endif // TARGET_WASM
 
         g_stackOverflowHandlerStack = (void*)((size_t)g_stackOverflowHandlerStack + stackOverflowStackSize);
+#if defined(TARGET_LIBNX) && defined(LINUXNX_MIRROR)
+        }
+#endif
 #endif // HAVE_MACH_EXCEPTIONS
     }
 

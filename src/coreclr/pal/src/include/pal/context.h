@@ -82,7 +82,10 @@ bool Xstate_IsAvx512Supported();
 bool Xstate_IsApxSupported();
 #endif // XSTATE_SUPPORTED || (HOST_AMD64 && HAVE_MACH_EXCEPTIONS)
 
-#if defined(HOST_64BIT) && defined(HOST_ARM64) && !defined(TARGET_FREEBSD) && !defined(__APPLE__) && !defined(TARGET_LIBNX)
+// The linuxnx profiling mirror runs on a real Linux/aarch64 host with glibc
+// ucontext, so it uses the Linux arm64 definitions below; only the device
+// target (no ucontext) needs the libnx_mcontext substitutes further down.
+#if defined(HOST_64BIT) && defined(HOST_ARM64) && !defined(TARGET_FREEBSD) && !defined(__APPLE__) && (!defined(TARGET_LIBNX) || defined(LINUXNX_MIRROR))
 #if !defined(SVE_MAGIC)
 
 // Add the missing SVE defines
@@ -808,7 +811,7 @@ const struct fpregs* GetConstNativeSigSimdContext(const native_context_t *mc)
     return GetNativeSigSimdContext(const_cast<native_context_t*>(mc));
 }
 
-#elif defined(TARGET_LIBNX) // TARGET_FREEBSD
+#elif defined(TARGET_LIBNX) && !defined(LINUXNX_MIRROR) // TARGET_FREEBSD
 
 // libnx: no ucontext/kernel sigcontext. Mirror the Linux aarch64 mcontext
 // layout so MCREG_* math stays correct for contexts the VM itself creates.
