@@ -92,6 +92,12 @@ build_native()
         cmakeArgs="-DCMAKE_SYSTEM_VARIANT=maccatalyst $cmakeArgs"
     fi
 
+    if [[ "$targetOS" == horiz && "$__CrossBuild" == 1 ]]; then
+        # Don't try to set CC/CXX in init-compiler.sh - toolchain.cmake selects devkitA64's GCC,
+        # which links with GNU ld (switch.specs passes options that lld does not know)
+        __Compiler="default"
+    fi
+
     if [[ "$targetOS" == android || "$targetOS" == linux-bionic ]]; then
         # Keep in sync with $(AndroidApiLevelMin) in Directory.Build.props in the repository rooot
         local ANDROID_API_LEVEL=21

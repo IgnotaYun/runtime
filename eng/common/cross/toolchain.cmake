@@ -8,6 +8,7 @@ unset(ILLUMOS)
 unset(ANDROID)
 unset(TIZEN)
 unset(HAIKU)
+unset(HORIZ)
 
 set(TARGET_ARCH_NAME $ENV{TARGET_BUILD_ARCH})
 
@@ -25,6 +26,10 @@ elseif(EXISTS ${CROSS_ROOTFS}/usr/platform/i86pc)
 elseif(EXISTS ${CROSS_ROOTFS}/boot/system/develop/headers/config/HaikuConfig.h)
   set(CMAKE_SYSTEM_NAME Haiku)
   set(HAIKU 1)
+elseif(EXISTS ${CROSS_ROOTFS}/libnx/include/switch.h)
+  # ROOTFS_DIR points at a devkitPro installation
+  set(CMAKE_SYSTEM_NAME Horiz)
+  set(HORIZ 1)
 else()
   set(CMAKE_SYSTEM_NAME Linux)
   set(LINUX 1)
@@ -58,6 +63,8 @@ elseif(TARGET_ARCH_NAME STREQUAL "arm64")
     if(TIZEN)
       set(TIZEN_TOOLCHAIN "aarch64-tizen-linux-gnu")
     endif()
+  elseif(HORIZ)
+    set(TOOLCHAIN "aarch64-none-elf")
   elseif(FREEBSD)
     set(TOOLCHAIN "aarch64-unknown-freebsd14")
   elseif(OPENBSD)
@@ -161,6 +168,9 @@ if(TIZEN)
   endif()
   include_directories(SYSTEM ${TIZEN_TOOLCHAIN_PATH}/include/c++)
   include_directories(SYSTEM ${TIZEN_TOOLCHAIN_PATH}/include/c++/${TIZEN_TOOLCHAIN})
+elseif(HORIZ)
+  include_directories(SYSTEM ${CROSS_ROOTFS}/libnx/include)
+  include_directories(SYSTEM ${CROSS_ROOTFS}/portlibs/switch/include)
 endif()
 
 function(locate_toolchain_exec exec var)
@@ -238,6 +248,24 @@ elseif(HAIKU)
 
     # let CMake set up the correct search paths
     include(Platform/Haiku)
+elseif(HORIZ)
+    set(DEVKITA64 "${CROSS_ROOTFS}/devkitA64")
+    set(CMAKE_SYSTEM_PREFIX_PATH "${DEVKITA64}")
+    set(CMAKE_FIND_ROOT_PATH "${CROSS_ROOTFS}" "${CROSS_ROOTFS}/portlibs/switch")
+    list(APPEND CMAKE_PROGRAM_PATH "${DEVKITA64}/bin" "${CROSS_ROOTFS}/tools/bin")
+
+    locate_toolchain_exec(gcc CMAKE_C_COMPILER)
+    locate_toolchain_exec(g++ CMAKE_CXX_COMPILER)
+    locate_toolchain_exec(gcc-ar CMAKE_AR)
+
+    # Horizon applications are single static PIE executables. Link them the way
+    # devkitPro does, so that configure checks see the POSIX functions that
+    # libnx/libounce implements (sockets, poll, ...) and none of the ones it does not.
+    set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS FALSE)
+    set(ENV{DEVKITPRO} "${CROSS_ROOTFS}") # read by switch.specs
+    set(CMAKE_EXE_LINKER_FLAGS_INIT "-specs=${CROSS_ROOTFS}/libnx/switch.specs")
+    set(CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES} -L${CROSS_ROOTFS}/libnx/lib -lnx")
+    set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES} -L${CROSS_ROOTFS}/libnx/lib -lnx")
 else()
     set(CMAKE_SYSROOT "${CROSS_ROOTFS}")
 
@@ -305,10 +333,29 @@ endif()
 
 # Specify compile options
 
-if((TARGET_ARCH_NAME MATCHES "^(arm|arm64|armel|armv6|loongarch64|ppc64le|riscv64|s390x|x64|x86)$" AND NOT ANDROID AND NOT FREEBSD AND NOT OPENBSD) OR ILLUMOS OR HAIKU)
+if((TARGET_ARCH_NAME MATCHES "^(arm|arm64|armel|armv6|loongarch64|ppc64le|riscv64|s390x|x64|x86)$" AND NOT ANDROID AND NOT FREEBSD AND NOT OPENBSD) OR ILLUMOS OR HAIKU OR HORIZ)
   set(CMAKE_C_COMPILER_TARGET ${TOOLCHAIN})
   set(CMAKE_CXX_COMPILER_TARGET ${TOOLCHAIN})
   set(CMAKE_ASM_COMPILER_TARGET ${TOOLCHAIN})
+endif()
+
+if(HORIZ)
+  if(NOT DEFINED CLR_HORIZ_MARCH)
+    set(CLR_HORIZ_MARCH "armv8-a+crc+crypto")
+  endif()
+  if(NOT DEFINED CLR_HORIZ_MTUNE)
+    set(CLR_HORIZ_MTUNE "cortex-a57")
+  endif()
+  list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CLR_HORIZ_MARCH CLR_HORIZ_MTUNE)
+
+  # Code generation settings of the devkitPro Switch platform (NintendoSwitch.cmake).
+  # The runtime is linked into a static executable, so thread locals use the
+  # local-exec model. The build adds -fPIC after these flags, which would select
+  # TLS descriptors, and GCC generates wrong code for those with -mtp=soft.
+  set(HORIZ_FLAGS "-march=${CLR_HORIZ_MARCH} -mtune=${CLR_HORIZ_MTUNE} -mtp=soft -ftls-model=local-exec -D__SWITCH__")
+  set(CMAKE_C_FLAGS_INIT "${HORIZ_FLAGS}")
+  set(CMAKE_CXX_FLAGS_INIT "${HORIZ_FLAGS}")
+  set(CMAKE_ASM_FLAGS_INIT "${HORIZ_FLAGS}")
 endif()
 
 if(TARGET_ARCH_NAME MATCHES "^(arm|armel)$")
