@@ -135,6 +135,28 @@ const int StackOverflowFlag = 0x40000000;
 
 /*++
 Function :
+    ShouldHandleHardwareExceptions
+
+    Whether hardware exceptions (SIGSEGV, SIGILL, ...) are translated to
+    exceptions.
+
+    The horiz mirror runs the horiz runtime on Linux to reproduce the behavior
+    of the device, where hardware exceptions are fatal. Translating them can be
+    enabled to debug faults (DOTNET_HorizMirrorHandleHardwareExceptions=1).
+--*/
+static bool ShouldHandleHardwareExceptions()
+{
+#ifdef TARGET_HORIZ_MIRROR
+    CLRConfigNoCache handleHardwareExceptions = CLRConfigNoCache::Get("HorizMirrorHandleHardwareExceptions", /*noprefix*/ false, &getenv);
+    DWORD value;
+    return handleHardwareExceptions.IsSet() && handleHardwareExceptions.TryAsInteger(10, value) && value != 0;
+#else
+    return true;
+#endif
+}
+
+/*++
+Function :
     SEHInitializeSignals
 
     Set up signal handlers to catch signals and translate them to exceptions
@@ -178,59 +200,63 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
 
            see sigaction man page for more details
            */
-        handle_signal(SIGILL, sigill_handler, &g_previous_sigill);
-        handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe);
-        handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus);
-        handle_signal(SIGABRT, sigabrt_handler, &g_previous_sigabrt);
+        if (ShouldHandleHardwareExceptions())
+        {
+            handle_signal(SIGILL, sigill_handler, &g_previous_sigill);
+            handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe);
+            handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus);
+            handle_signal(SIGABRT, sigabrt_handler, &g_previous_sigabrt);
+
+#if HAVE_MACH_EXCEPTIONS || !HAVE_SIGALTSTACK
+            handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv);
+#else
+            handle_signal(SIGTRAP, sigtrap_handler, &g_previous_sigtrap);
+            int additionalFlagsForSigSegv = 0;
+#ifndef TARGET_SUNOS
+            // On platforms that support signal handlers that don't return,
+            // SIGSEGV handler runs on a separate stack so that we can handle stack overflow
+            additionalFlagsForSigSegv |= SA_ONSTACK;
+#endif
+            handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv, additionalFlagsForSigSegv);
+
+            if (!pthrCurrent->EnsureSignalAlternateStack())
+            {
+                return FALSE;
+            }
+
+            // Allocate the minimal stack necessary for handling stack overflow
+            int stackOverflowStackSize = ALIGN_UP(sizeof(SignalHandlerWorkerReturnPoint), 16) + 9 * 4096;
+            // Align the size to virtual page size and add one virtual page as a stack guard
+            stackOverflowStackSize = ALIGN_UP(stackOverflowStackSize, GetVirtualPageSize()) + GetVirtualPageSize();
+            int flags = MAP_ANONYMOUS | MAP_PRIVATE;
+#ifdef MAP_STACK
+            flags |= MAP_STACK;
+#endif
+            g_stackOverflowHandlerStack = mmap(NULL, stackOverflowStackSize, PROT_READ | PROT_WRITE, flags, -1, 0);
+            if (g_stackOverflowHandlerStack == MAP_FAILED)
+            {
+                return FALSE;
+            }
+
+#ifndef TARGET_WASM
+            // create a guard page for the alternate stack
+            int st = mprotect((void*)g_stackOverflowHandlerStack, GetVirtualPageSize(), PROT_NONE);
+            if (st != 0)
+            {
+                munmap((void*)g_stackOverflowHandlerStack, stackOverflowStackSize);
+                return FALSE;
+            }
+#endif // TARGET_WASM
+
+            g_stackOverflowHandlerStack = (void*)((size_t)g_stackOverflowHandlerStack + stackOverflowStackSize);
+#endif // HAVE_MACH_EXCEPTIONS
+        }
+
         // We don't setup a handler for SIGINT/SIGQUIT when those signals are ignored.
         // Otherwise our child processes would reset to the default on exec causing them
         // to terminate on these signals.
         handle_signal(SIGINT, sigint_handler, &g_previous_sigint, 0 /* additionalFlags */, true /* skipIgnored */);
         handle_signal(SIGQUIT, sigquit_handler, &g_previous_sigquit, 0 /* additionalFlags */, true /* skipIgnored */);
-
-#if HAVE_MACH_EXCEPTIONS || !HAVE_SIGALTSTACK
-        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv);
-#else
-        handle_signal(SIGTRAP, sigtrap_handler, &g_previous_sigtrap);
-        int additionalFlagsForSigSegv = 0;
-#ifndef TARGET_SUNOS
-        // On platforms that support signal handlers that don't return,
-        // SIGSEGV handler runs on a separate stack so that we can handle stack overflow
-        additionalFlagsForSigSegv |= SA_ONSTACK;
-#endif
-        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv, additionalFlagsForSigSegv);
-
-        if (!pthrCurrent->EnsureSignalAlternateStack())
-        {
-            return FALSE;
-        }
-
-        // Allocate the minimal stack necessary for handling stack overflow
-        int stackOverflowStackSize = ALIGN_UP(sizeof(SignalHandlerWorkerReturnPoint), 16) + 9 * 4096;
-        // Align the size to virtual page size and add one virtual page as a stack guard
-        stackOverflowStackSize = ALIGN_UP(stackOverflowStackSize, GetVirtualPageSize()) + GetVirtualPageSize();
-        int flags = MAP_ANONYMOUS | MAP_PRIVATE;
-#ifdef MAP_STACK
-        flags |= MAP_STACK;
-#endif
-        g_stackOverflowHandlerStack = mmap(NULL, stackOverflowStackSize, PROT_READ | PROT_WRITE, flags, -1, 0);
-        if (g_stackOverflowHandlerStack == MAP_FAILED)
-        {
-            return FALSE;
-        }
-
-#ifndef TARGET_WASM
-        // create a guard page for the alternate stack
-        int st = mprotect((void*)g_stackOverflowHandlerStack, GetVirtualPageSize(), PROT_NONE);
-        if (st != 0)
-        {
-            munmap((void*)g_stackOverflowHandlerStack, stackOverflowStackSize);
-            return FALSE;
-        }
-#endif // TARGET_WASM
-
-        g_stackOverflowHandlerStack = (void*)((size_t)g_stackOverflowHandlerStack + stackOverflowStackSize);
-#endif // HAVE_MACH_EXCEPTIONS
     }
 
     /* The default action for SIGPIPE is process termination.

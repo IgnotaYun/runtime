@@ -659,13 +659,9 @@ int g_hardware_exception_context_locvar_offset = 0;
 // where an activation signal interrupted the thread.
 int g_inject_activation_context_locvar_offset = 0;
 
-#ifndef TARGET_HORIZ
-BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextPointers)
+#ifndef HOST_HORIZ
+static bool UnwindSignalHandlerFrame(CONTEXT *context)
 {
-    int st;
-    unw_context_t unwContext;
-    unw_cursor_t cursor;
-
     DWORD64 curPc = CONTEXTGetPC(context);
 
     // Check if the PC is the return address from the SEHProcessException.
@@ -677,7 +673,7 @@ BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextP
         CONTEXT* exceptionContext = *(CONTEXT**)(CONTEXTGetFP(context) + g_hardware_exception_context_locvar_offset);
         memcpy_s(context, sizeof(CONTEXT), exceptionContext, sizeof(CONTEXT));
 
-        return TRUE;
+        return true;
     }
 
     // Check if the PC is the return address from the InvokeActivationHandler.
@@ -689,6 +685,24 @@ BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextP
         CONTEXT* activationContext = (CONTEXT*)(CONTEXTGetFP(context) + g_inject_activation_context_locvar_offset);
         memcpy_s(context, sizeof(CONTEXT), activationContext, sizeof(CONTEXT));
 
+        return true;
+    }
+
+    return false;
+}
+#endif // !HOST_HORIZ
+
+#ifndef TARGET_HORIZ
+BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextPointers)
+{
+    int st;
+    unw_context_t unwContext;
+    unw_cursor_t cursor;
+
+    DWORD64 curPc = CONTEXTGetPC(context);
+
+    if (UnwindSignalHandlerFrame(context))
+    {
         return TRUE;
     }
 
@@ -801,6 +815,14 @@ static_assert(offsetof(KNONVOLATILE_CONTEXT_POINTERS, D8) == offsetof(HorizUnwin
 
 BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextPointers)
 {
+#ifndef HOST_HORIZ
+    // The horiz mirror runs on Linux, which delivers signals
+    if (UnwindSignalHandlerFrame(context))
+    {
+        return TRUE;
+    }
+#endif // !HOST_HORIZ
+
     // The PC of a frame that caused a hardware exception is the faulting
     // instruction rather than a return address, so it is looked up as is.
     bool exactPc = (context->ContextFlags & CONTEXT_EXCEPTION_ACTIVE) != 0;
@@ -810,7 +832,7 @@ BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextP
         return FALSE;
     }
 
-    // Horizon delivers no signals, so the caller is never a signal frame.
+    // Signal frames are only unwound through UnwindSignalHandlerFrame
     context->ContextFlags &= ~CONTEXT_EXCEPTION_ACTIVE;
     context->ContextFlags |= CONTEXT_UNWOUND_TO_CALL;
 
