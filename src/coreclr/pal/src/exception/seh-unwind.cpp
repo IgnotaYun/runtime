@@ -26,6 +26,8 @@ Abstract:
 #ifndef TARGET_HORIZ
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
+#else // !TARGET_HORIZ
+#include "../horiz/unwind-horiz.h"
 #endif // !TARGET_HORIZ
 #else // HOST_UNIX
 
@@ -781,6 +783,37 @@ BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextP
     {
         GetContextPointers(&cursor, &unwContext, contextPointers);
     }
+    return TRUE;
+}
+#else // !TARGET_HORIZ
+
+static_assert(offsetof(CONTEXT, X) == offsetof(HorizUnwindContext, X), "HorizUnwindContext must match CONTEXT");
+static_assert(offsetof(CONTEXT, Fp) == offsetof(HorizUnwindContext, Fp), "HorizUnwindContext must match CONTEXT");
+static_assert(offsetof(CONTEXT, Lr) == offsetof(HorizUnwindContext, Lr), "HorizUnwindContext must match CONTEXT");
+static_assert(offsetof(CONTEXT, Sp) == offsetof(HorizUnwindContext, Sp), "HorizUnwindContext must match CONTEXT");
+static_assert(offsetof(CONTEXT, Pc) == offsetof(HorizUnwindContext, Pc), "HorizUnwindContext must match CONTEXT");
+static_assert(offsetof(CONTEXT, V) == offsetof(HorizUnwindContext, V), "HorizUnwindContext must match CONTEXT");
+
+static_assert(offsetof(KNONVOLATILE_CONTEXT_POINTERS, X19) == offsetof(HorizUnwindSavedLocations, X19ToX28), "HorizUnwindSavedLocations must match KNONVOLATILE_CONTEXT_POINTERS");
+static_assert(offsetof(KNONVOLATILE_CONTEXT_POINTERS, Fp) == offsetof(HorizUnwindSavedLocations, Fp), "HorizUnwindSavedLocations must match KNONVOLATILE_CONTEXT_POINTERS");
+static_assert(offsetof(KNONVOLATILE_CONTEXT_POINTERS, Lr) == offsetof(HorizUnwindSavedLocations, Lr), "HorizUnwindSavedLocations must match KNONVOLATILE_CONTEXT_POINTERS");
+static_assert(offsetof(KNONVOLATILE_CONTEXT_POINTERS, D8) == offsetof(HorizUnwindSavedLocations, D8ToD15), "HorizUnwindSavedLocations must match KNONVOLATILE_CONTEXT_POINTERS");
+
+BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextPointers)
+{
+    // The PC of a frame that caused a hardware exception is the faulting
+    // instruction rather than a return address, so it is looked up as is.
+    bool exactPc = (context->ContextFlags & CONTEXT_EXCEPTION_ACTIVE) != 0;
+
+    if (!horizcfi::HorizVirtualUnwindCfi((HorizUnwindContext*)context, exactPc, (HorizUnwindSavedLocations*)contextPointers))
+    {
+        return FALSE;
+    }
+
+    // Horizon delivers no signals, so the caller is never a signal frame.
+    context->ContextFlags &= ~CONTEXT_EXCEPTION_ACTIVE;
+    context->ContextFlags |= CONTEXT_UNWOUND_TO_CALL;
+
     return TRUE;
 }
 #endif // !TARGET_HORIZ

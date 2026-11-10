@@ -150,8 +150,10 @@ endif(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_
 
 if(CLR_CMAKE_TARGET_HORIZ)
   # Horizon has no mmap; the application provides the memory (see horiz_host.h).
+  # libunwind is replaced by a DWARF CFI unwinder over libgcc's FDE lookup.
   list(APPEND PLATFORM_SOURCES
     horiz/mmap-horiz.c
+    horiz/unwind-horiz.cpp
   )
 endif(CLR_CMAKE_TARGET_HORIZ)
 
