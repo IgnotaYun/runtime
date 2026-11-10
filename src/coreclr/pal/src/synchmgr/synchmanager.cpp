@@ -22,6 +22,7 @@ SET_DEFAULT_DEBUG_CHANNEL(SYNC); // some headers have code with asserts, so do t
 
 #include "synchmanager.hpp"
 #include "pal/file.hpp"
+#include "pal/utils.h"
 
 #include <sys/types.h>
 #include <sys/time.h>
@@ -1309,7 +1310,8 @@ namespace CorUnix
             goto I_exit;
         }
 
-#ifndef __wasm__
+#if !defined(__wasm__) && !defined(TARGET_HORIZ)
+        // Only the worker thread reads the process pipe (see PAL_Initialize)
         if (!pSynchManager->CreateProcessPipe())
         {
             ERROR("Unable to create process pipe \n");
@@ -2494,7 +2496,7 @@ namespace CorUnix
               "for process shutdown or thread termination\n");
         while (true)
         {
-            poll(NULL, 0, INFTIM);
+            UTIL_Sleep(INFTIM);
             sched_yield();
         }
 
@@ -2691,6 +2693,7 @@ namespace CorUnix
         minipal_mutex_leave(&s_csMonitoredProcessesLock);
     }
 
+#if !defined(__wasm__) && !defined(TARGET_HORIZ)
     /*++
     Method:
       CPalSynchronizationManager::CreateProcessPipe
@@ -2841,6 +2844,7 @@ namespace CorUnix
 
         return fRet;
     }
+#endif // !__wasm__ && !TARGET_HORIZ
 
     /*++
     Method:
@@ -3111,7 +3115,7 @@ namespace CorUnix
             ERROR("Failed creating thread synchronization mutex [error=%d (%s)]\n", iRet, strerror(iRet));
             if (EAGAIN == iRet && MaxUnavailableResourceRetries >= ++iEagains)
             {
-                poll(NULL, 0, std::min(100,10*iEagains));
+                UTIL_Sleep(std::min(100,10*iEagains));
                 goto Mutex_retry;
             }
             else if (ENOMEM == iRet)
@@ -3137,7 +3141,7 @@ namespace CorUnix
                   "[error=%d (%s)]\n", iRet, strerror(iRet));
             if (EAGAIN == iRet && MaxUnavailableResourceRetries >= ++iEagains)
             {
-                poll(NULL, 0, std::min(100,10*iEagains));
+                UTIL_Sleep(std::min(100,10*iEagains));
                 goto Cond_retry;
             }
             else if (ENOMEM == iRet)

@@ -34,6 +34,12 @@ Revision History:
 // <unistd.h> already included above
 #elif HAVE_SYSCTL
 #include <sys/sysctl.h>
+#elif defined(HOST_HORIZ)
+// libnx/libounce headers only get C linkage through <switch.h>.
+extern "C" {
+#include <switch/result.h>
+#include <switch/kernel/svc.h>
+}
 #else
 #error Either sysctl or sysconf is required for GetSystemInfo.
 #endif
@@ -94,7 +100,7 @@ Revision History:
 
 SET_DEFAULT_DEBUG_CHANNEL(MISC);
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(HOST_HORIZ)
 #if HAVE_SYSCONF && HAVE__SC_AVPHYS_PAGES
 #define SYSCONF_PAGES _SC_AVPHYS_PAGES
 #elif HAVE_SYSCONF && HAVE__SC_PHYS_PAGES
@@ -102,7 +108,7 @@ SET_DEFAULT_DEBUG_CHANNEL(MISC);
 #else
 #error Dont know how to get page-size on this architecture!
 #endif
-#endif // __APPLE__
+#endif // !__APPLE__ && !HOST_HORIZ
 
 DWORD
 PALAPI
@@ -133,6 +139,13 @@ PAL_GetTotalCpuCount()
     if (rc != 0)
     {
         ASSERT("sysctl failed for HW_NCPU (%d)\n", errno);
+    }
+#elif defined(HOST_HORIZ)
+    // The cores the application may run on (the last core is reserved for the system)
+    u64 coreMask;
+    if (R_SUCCEEDED(svcGetInfo(&coreMask, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0)))
+    {
+        nrcpus = __builtin_popcountll(coreMask);
     }
 #else // HAVE_SYSCONF
 #error "Don't know how to get total CPU count on this platform"
@@ -260,6 +273,12 @@ GetSystemInfo(
     lpSystemInfo->lpMaximumApplicationAddress = (PVOID) (1ul << 31);
 #elif defined(USERLIMIT)
     lpSystemInfo->lpMaximumApplicationAddress = (PVOID) USERLIMIT;
+#elif defined(HOST_HORIZ)
+    u64 aslrRegionAddress = 0;
+    u64 aslrRegionSize = 0;
+    svcGetInfo(&aslrRegionAddress, InfoType_AslrRegionAddress, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&aslrRegionSize, InfoType_AslrRegionSize, CUR_PROCESS_HANDLE, 0);
+    lpSystemInfo->lpMaximumApplicationAddress = (PVOID) (aslrRegionAddress + aslrRegionSize);
 #elif defined(HOST_64BIT)
 #if defined(USRSTACK64)
     lpSystemInfo->lpMaximumApplicationAddress = (PVOID) USRSTACK64;

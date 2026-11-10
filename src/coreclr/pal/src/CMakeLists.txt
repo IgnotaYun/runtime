@@ -4,13 +4,20 @@ if(CLR_CMAKE_TARGET_APPLE OR CLR_CMAKE_TARGET_FREEBSD OR CLR_CMAKE_TARGET_HAIKU)
   set(CLR_CMAKE_USE_SYSTEM_LIBUNWIND 1)
 endif(CLR_CMAKE_TARGET_APPLE OR CLR_CMAKE_TARGET_FREEBSD OR CLR_CMAKE_TARGET_HAIKU)
 
+if(CLR_CMAKE_TARGET_ARCH_WASM OR CLR_CMAKE_TARGET_HORIZ)
+  # WebAssembly has no native unwinding; horiz uses its own DWARF CFI unwinder
+  set(CLR_CMAKE_NO_LIBUNWIND 1)
+endif()
+
 if(NOT DEFINED ENV{ROOTFS_DIR})
   include_directories(SYSTEM /usr/local/include)
 elseif (CLR_CMAKE_TARGET_FREEBSD)
   include_directories(SYSTEM $ENV{ROOTFS_DIR}/usr/local/include)
 endif()
 
-if(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if(CLR_CMAKE_NO_LIBUNWIND)
+  # nothing to build or find
+elseif(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND)
   include_directories(${CLR_SRC_NATIVE_DIR}/external/libunwind/include)
   include_directories(${CLR_SRC_NATIVE_DIR}/external/libunwind/include/tdep)
   include_directories(${CLR_ARTIFACTS_OBJ_DIR}/external/libunwind/include)
@@ -21,7 +28,7 @@ elseif(NOT CLR_CMAKE_TARGET_APPLE)
   find_unwind_libs(UNWIND_LIBS)
 else()
   add_subdirectory(${CLR_SRC_NATIVE_DIR}/external/libunwind_extras ${CLR_ARTIFACTS_OBJ_DIR}/external/libunwind)
-endif(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+endif()
 
 include(configure.cmake)
 
@@ -108,6 +115,11 @@ if(CLR_CMAKE_TARGET_LINUX_MUSL)
   add_definitions(-DENSURE_PRIMARY_STACK_SIZE)
 endif(CLR_CMAKE_TARGET_LINUX_MUSL)
 
+if(CLR_CMAKE_HOST_HORIZ)
+  # Horizon has no resource limits
+  add_definitions(-DDONT_SET_RLIMIT_NOFILE)
+endif(CLR_CMAKE_HOST_HORIZ)
+
 if(CLR_CMAKE_TARGET_HAIKU)
   add_definitions(-D_GNU_SOURCE)
 endif(CLR_CMAKE_TARGET_HAIKU)
@@ -129,12 +141,37 @@ if (CLR_CMAKE_TARGET_ARCH_WASM)
   )
 endif()
 
-if(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_HOST_HORIZ)
   list(APPEND PLATFORM_SOURCES
     arch/${PAL_ARCH_SOURCES_DIR}/callsignalhandlerwrapper.S
     arch/${PAL_ARCH_SOURCES_DIR}/signalhandlerhelper.cpp
   )
-endif(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+endif(NOT CLR_CMAKE_TARGET_APPLE AND NOT CLR_CMAKE_TARGET_ARCH_WASM AND NOT CLR_CMAKE_HOST_HORIZ)
+
+if(CLR_CMAKE_TARGET_HORIZ)
+  # Horizon has no mmap; the application provides the memory (see horiz_host.h).
+  list(APPEND PLATFORM_SOURCES
+    horiz/mmap-horiz.c
+  )
+endif(CLR_CMAKE_TARGET_HORIZ)
+
+if(CLR_CMAKE_TARGET_HORIZ_MIRROR)
+  list(APPEND PLATFORM_SOURCES
+    ${CLR_HORIZ_MIRROR_SHIM_DIR}/src/switch_shim.c
+  )
+  # The shim implements the libnx/libounce APIs with Linux extensions
+  set_source_files_properties(${CLR_HORIZ_MIRROR_SHIM_DIR}/src/switch_shim.c PROPERTIES COMPILE_DEFINITIONS _GNU_SOURCE)
+endif(CLR_CMAKE_TARGET_HORIZ_MIRROR)
+
+if(CLR_CMAKE_HOST_HORIZ)
+  # Replacements for the debugging, signal and dynamic loading support of the
+  # other Unix systems, which Horizon does not have
+  list(APPEND PLATFORM_SOURCES
+    horiz/debug-horiz.cpp
+    horiz/dlfcn-horiz.c
+    horiz/signal-horiz.cpp
+  )
+endif(CLR_CMAKE_HOST_HORIZ)
 
 if(CLR_CMAKE_HOST_ARCH_ARM)
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -149,9 +186,7 @@ endif()
 set(SOURCES
   com/guid.cpp
   cruntime/wchar.cpp
-  debug/debug.cpp
   exception/seh.cpp
-  exception/signal.cpp
   file/directory.cpp
   file/file.cpp
   file/filetime.cpp
@@ -207,11 +242,18 @@ set(SOURCES
   synchmgr/synchcontrollers.cpp
   synchmgr/synchmanager.cpp
   synchmgr/wait.cpp
-  thread/context.cpp
   thread/process.cpp
   thread/thread.cpp
   thread/threadsusp.cpp
 )
+
+if(NOT CLR_CMAKE_HOST_HORIZ)
+  list(APPEND SOURCES
+    debug/debug.cpp
+    exception/signal.cpp
+    thread/context.cpp
+  )
+endif(NOT CLR_CMAKE_HOST_HORIZ)
 
 set_source_files_properties(
     com/guid.cpp
@@ -219,9 +261,9 @@ set_source_files_properties(
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/../inc/rt
 )
 
-if(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+if(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_NO_LIBUNWIND)
   set(LIBUNWIND_OBJECTS $<TARGET_OBJECTS:libunwind>)
-endif(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
+endif(NOT CLR_CMAKE_USE_SYSTEM_LIBUNWIND AND NOT CLR_CMAKE_NO_LIBUNWIND)
 
 add_library(coreclrpal_objects
   OBJECT
@@ -252,7 +294,7 @@ if(CLR_CMAKE_TARGET_APPLE)
   )
 
   target_compile_definitions(coreclrpal_dac PUBLIC -DUNW_REMOTE_ONLY)
-else()
+elseif(NOT CLR_CMAKE_TARGET_HORIZ) # horiz builds no DAC
   if(NOT FEATURE_CROSSBITNESS)
     add_library(coreclrpal_dac STATIC
       exception/remote-unwind.cpp

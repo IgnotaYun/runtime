@@ -38,6 +38,10 @@ extern "C"
 #endif // HAVE_UCONTEXT_H
 
 typedef ucontext_t native_context_t;
+#elif defined(HOST_HORIZ)
+// Horizon delivers no signals, so there are no native contexts. The type only
+// appears in declarations.
+typedef struct native_context native_context_t;
 #else   // HAVE_UCONTEXT_T
 #error Native context type is not known on this platform!
 #endif  // HAVE_UCONTEXT_T
@@ -63,7 +67,7 @@ bool Xstate_IsAvx512Supported();
 bool Xstate_IsApxSupported();
 #endif // XSTATE_SUPPORTED || (HOST_AMD64 && HAVE_MACH_EXCEPTIONS)
 
-#if defined(HOST_64BIT) && defined(HOST_ARM64) && !defined(TARGET_FREEBSD) && !defined(__APPLE__)
+#if defined(HOST_64BIT) && defined(HOST_ARM64) && !defined(TARGET_FREEBSD) && !defined(__APPLE__) && !defined(HOST_HORIZ)
 #if !defined(SVE_MAGIC)
 
 // Add the missing SVE defines
@@ -145,7 +149,7 @@ struct sve_context {
         (SVE_SIG_REGS_OFFSET + SVE_SIG_REGS_SIZE(vq))
 
 #endif // SVE_MAGIC
-#endif // HOST_64BIT && HOST_ARM64 && !TARGET_FREEBSD && !__APPLE__
+#endif // HOST_64BIT && HOST_ARM64 && !TARGET_FREEBSD && !__APPLE__ && !HOST_HORIZ
 
 #ifdef HOST_S390X
 
@@ -213,6 +217,10 @@ struct sve_context {
 
 #define MCREG_Sp(mc)      0
 #define MCREG_Pc(mc)      0
+
+#elif defined(HOST_HORIZ)
+
+// No native contexts (see native_context_t above)
 
 #elif HAVE___GREGSET_T
 

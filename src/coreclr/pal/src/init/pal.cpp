@@ -254,7 +254,11 @@ InitializeDefaultStackSize()
         DWORD size;
         if (defStackSize.TryAsInteger(16, size))
         {
+#ifdef PTHREAD_STACK_MIN
             g_defaultStackSize = std::max(size, (DWORD)PTHREAD_STACK_MIN);
+#else
+            g_defaultStackSize = size;
+#endif
         }
     }
 
@@ -274,6 +278,14 @@ InitializeDefaultStackSize()
         g_defaultStackSize = 1536 * 1024;
     }
 #endif // ENSURE_PRIMARY_STACK_SIZE
+
+#ifdef TARGET_HORIZ
+    if (g_defaultStackSize == 0)
+    {
+        // libnx/libounce creates threads with 128 KB stacks by default
+        g_defaultStackSize = 2 * 1024 * 1024;
+    }
+#endif // TARGET_HORIZ
 }
 
 /*++
@@ -588,7 +600,9 @@ Initialize(
             }
         }
 
-#ifndef TARGET_WASM
+// The worker waits on the process pipe for child process exits and shutdown.
+// WASM and horiz have no child processes; libnx/libounce cannot poll a pipe either.
+#if !defined(TARGET_WASM) && !defined(TARGET_HORIZ)
         if (flags & PAL_INITIALIZE_SYNC_THREAD)
         {
             //
@@ -601,7 +615,7 @@ Initialize(
                 goto CLEANUP13;
             }
         }
-#endif // !TARGET_WASM
+#endif // !TARGET_WASM && !TARGET_HORIZ
         /* initialize structured exception handling stuff (signals, etc) */
         if (FALSE == SEHInitialize(pThread, flags))
         {

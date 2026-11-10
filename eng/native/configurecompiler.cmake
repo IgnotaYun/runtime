@@ -786,6 +786,15 @@ if(CLR_CMAKE_TARGET_UNIX)
     add_compile_definitions($<$<NOT:$<BOOL:$<TARGET_PROPERTY:IGNORE_DEFAULT_TARGET_OS>>>:TARGET_HORIZ>)
     if(CLR_CMAKE_TARGET_HORIZ_MIRROR)
       add_compile_definitions($<$<NOT:$<BOOL:$<TARGET_PROPERTY:IGNORE_DEFAULT_TARGET_OS>>>:TARGET_HORIZ_MIRROR>)
+
+      # The mirror runs the horiz configuration on Linux. The libnx/libounce APIs that it
+      # still uses are emulated by a shim that lives with the application:
+      # <dir>/include provides <switch.h> and <dir>/src/switch_shim.c the code.
+      set(CLR_HORIZ_MIRROR_SHIM_DIR "" CACHE PATH "Directory of the libnx/libounce API shim used by the horiz mirror build")
+      if(NOT CLR_HORIZ_MIRROR_SHIM_DIR)
+        message(FATAL_ERROR "Building the horiz runtime on Linux (the horiz mirror) requires CLR_HORIZ_MIRROR_SHIM_DIR")
+      endif()
+      include_directories(BEFORE SYSTEM ${CLR_HORIZ_MIRROR_SHIM_DIR}/include)
     endif()
   endif()
   if(CLR_CMAKE_TARGET_BROWSER)

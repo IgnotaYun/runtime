@@ -43,7 +43,7 @@ SET_DEFAULT_DEBUG_CHANNEL(LOADER); // some headers have code with asserts, so do
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
-#else
+#elif !defined(HOST_HORIZ)
 #include <link.h>
 #endif // __APPLE__
 
@@ -926,7 +926,7 @@ PAL_CopyModuleData(PVOID moduleBase, PVOID destinationBufferStart, PVOID destina
     }
     return param.result;
 }
-#elif defined(TARGET_WASM)
+#elif defined(TARGET_WASM) || defined(HOST_HORIZ)
 // WASM-TODO: get rid of whole module loading on wasm
 PALIMPORT
 int
@@ -1026,7 +1026,7 @@ BOOL LOADInitializeModules()
 
     exe_module.self = (HMODULE)&exe_module;
     exe_module.dl_handle = dlopen(nullptr, RTLD_LAZY);
-#ifndef TARGET_WASM // wasm does not support shared libraries
+#if !defined(TARGET_WASM) && !defined(HOST_HORIZ) // wasm and horiz do not support shared libraries
     if (exe_module.dl_handle == nullptr)
     {
         ERROR("Executable module will be broken : dlopen(nullptr) failed\n");

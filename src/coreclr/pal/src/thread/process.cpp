@@ -62,6 +62,13 @@ SET_DEFAULT_DEBUG_CHANNEL(PROCESS); // some headers have code with asserts, so d
 #include <limits.h>
 #include <vector>
 
+#ifdef TARGET_HORIZ
+#include "horiz_host.h"
+
+// The application may stop the services it started before the process ends
+extern "C" void runtime_exit_pal_terminate(int exitCode) __attribute__((weak));
+#endif // TARGET_HORIZ
+
 #ifdef __linux__
 #include <linux/membarrier.h>
 #include <sys/syscall.h>
@@ -1173,7 +1180,7 @@ ExitProcess(
         WARN("termination already started from another thread; blocking.\n");
         while (true)
         {
-            poll(NULL, 0, INFTIM);
+            UTIL_Sleep(INFTIM);
         }
     }
 
@@ -1311,6 +1318,13 @@ static BOOL PROCEndProcess(HANDLE hProcess, UINT uExitCode, BOOL bTerminateUncon
             ERROR("exit() only supports the lower 8-bits of an exit code. "
                 "status will only see error 0x%x instead of 0x%x.\n", uExitCode & 0xff, uExitCode);
         }
+
+#ifdef TARGET_HORIZ
+        if (runtime_exit_pal_terminate != NULL)
+        {
+            runtime_exit_pal_terminate((int)uExitCode);
+        }
+#endif // TARGET_HORIZ
 
         TerminateCurrentProcessNoExit(bTerminateUnconditionally);
 
@@ -2442,7 +2456,7 @@ PROCCreateCrashDump(
             // The first thread generates the crash info and any other threads are blocked
             while (true)
             {
-                poll(NULL, 0, INFTIM);
+                UTIL_Sleep(INFTIM);
             }
         }
     }
@@ -2779,6 +2793,7 @@ PROCCreateCrashDumpIfEnabled(int signal, siginfo_t* siginfo, bool serialize)
                 argv.push_back(crashThreadArg);
             }
 
+#ifndef HOST_HORIZ // newlib's siginfo_t has no si_errno and si_addr; Horizon delivers no signals
             if (siginfo != nullptr)
             {
                 signalCodeArg = PROCFormatInt(siginfo->si_code);
@@ -2800,6 +2815,7 @@ PROCCreateCrashDumpIfEnabled(int signal, siginfo_t* siginfo, bool serialize)
                     argv.push_back(signalAddressArg);
                 }
             }
+#endif // !HOST_HORIZ
 
             argv.push_back(nullptr);
         }
@@ -2886,7 +2902,8 @@ InitializeFlushProcessWriteBuffers()
     }
 #endif
 
-#if defined(TARGET_APPLE) || defined(TARGET_WASM)
+#if defined(TARGET_APPLE) || defined(TARGET_WASM) || defined(TARGET_HORIZ)
+    // horiz: mprotect has no effect on the memory of the PAL's mmap
     return TRUE;
 #else
     s_helperPage = static_cast<int*>(mmap(0, GetVirtualPageSize(), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
@@ -2916,7 +2933,7 @@ InitializeFlushProcessWriteBuffers()
     }
 
     return status == 0;
-#endif // TARGET_APPLE || TARGET_WASM
+#endif // TARGET_APPLE || TARGET_WASM || TARGET_HORIZ
 }
 
 #define FATAL_ASSERT(e, msg) \
@@ -3562,7 +3579,7 @@ CorUnix::TerminateCurrentProcessNoExit(BOOL bTerminateUnconditionally)
         WARN("termination already started from another thread; blocking.\n");
         while (true)
         {
-            poll(NULL, 0, INFTIM);
+            UTIL_Sleep(INFTIM);
         }
     }
 

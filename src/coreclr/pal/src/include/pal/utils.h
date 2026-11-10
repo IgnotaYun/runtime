@@ -158,6 +158,15 @@ Return Value :
 --*/
 LPWSTR UTIL_MBToWC_Alloc(LPCSTR lpMultiByteStr, int cbMultiByte);
 
+/*++
+Function:
+  UTIL_Sleep
+
+  Sleeps for the given number of milliseconds, or forever for INFTIM, like
+  poll(NULL, 0, timeout).
+--*/
+void UTIL_Sleep(int timeout);
+
 #if HAVE_VM_ALLOCATE
 #include <mach/kern_return.h>
 

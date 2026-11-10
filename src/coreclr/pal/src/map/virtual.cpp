@@ -1572,9 +1572,11 @@ void ExecutableMemoryAllocator::Initialize()
 {
     // Enable the executable memory allocator on 64-bit platforms only
     // because 32-bit platforms have limited amount of virtual address space.
-#ifdef HOST_64BIT
+    // On horiz a reservation is backed by memory, and executable memory comes
+    // from the code arena of the double mapper instead.
+#if defined(HOST_64BIT) && !defined(TARGET_HORIZ)
     TryReserveInitialMemory();
-#endif // HOST_64BIT
+#endif // HOST_64BIT && !TARGET_HORIZ
 
 }
 
@@ -1595,6 +1597,7 @@ void ExecutableMemoryAllocator::TryReserveInitialMemory()
 
     int32_t sizeOfAllocation = MaxExecutableMemorySizeNearCoreClr;
     int32_t initialReserveLimit = -1;
+#ifndef HOST_HORIZ // no resource limits on Horizon
     rlimit addressSpaceLimit;
     if ((getrlimit(RLIMIT_AS, &addressSpaceLimit) == 0) && (addressSpaceLimit.rlim_cur != RLIM_INFINITY))
     {
@@ -1616,6 +1619,7 @@ void ExecutableMemoryAllocator::TryReserveInitialMemory()
             sizeOfAllocation = initialReserveLimit;
         }
     }
+#endif // !HOST_HORIZ
 #if defined(TARGET_ARM) || defined(TARGET_ARM64)
     // Smaller steps on ARM because we try hard finding a spare memory in a 128Mb
     // distance from coreclr so e.g. all calls from corelib to coreclr could use relocs

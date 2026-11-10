@@ -23,9 +23,30 @@ SET_DEFAULT_DEBUG_CHANNEL(MISC);
 #if defined(__APPLE__) || defined(__FreeBSD__)
 #include <sys/param.h>
 #include <sys/mount.h>
-#elif !defined(__HAIKU__)
+#elif !defined(__HAIKU__) && !defined(HOST_HORIZ)
 #include <sys/vfs.h>
 #endif
+
+#ifdef HOST_HORIZ
+
+// Horizon has no control groups
+
+void InitializeCGroup()
+{
+}
+
+void CleanupCGroup()
+{
+}
+
+BOOL
+PALAPI
+PAL_GetCpuLimit(UINT* val)
+{
+    return FALSE;
+}
+
+#else // HOST_HORIZ
 
 #define CGROUP2_SUPER_MAGIC 0x63677270
 
@@ -522,3 +543,5 @@ PAL_GetCpuLimit(UINT* val)
 
     return CGroup::GetCpuLimit(val);
 }
+
+#endif // HOST_HORIZ

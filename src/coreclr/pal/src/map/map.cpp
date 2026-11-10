@@ -467,7 +467,12 @@ CorUnix::InternalCreateFileMapping(
             // information, though...
             //
 
+#ifdef HOST_HORIZ
+            // libnx/libounce's fcntl does not duplicate descriptors; there is no exec either
+            UnixFd = dup(pFileLocalData->unix_fd);
+#else
             UnixFd = fcntl(pFileLocalData->unix_fd, F_DUPFD_CLOEXEC, 0); // dup, but with CLOEXEC
+#endif
             if (-1 == UnixFd)
             {
                 ERROR( "Unable to duplicate the Unix file descriptor!\n" );

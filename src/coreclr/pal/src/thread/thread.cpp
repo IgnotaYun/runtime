@@ -47,6 +47,13 @@ SET_DEFAULT_DEBUG_CHANNEL(THREAD); // some headers have code with asserts, so do
 #include <emscripten/stack.h>
 #endif
 
+#if defined(HOST_HORIZ)
+// libnx/libounce headers only get C linkage through <switch.h>.
+extern "C" {
+#include <switch/kernel/thread.h>
+}
+#endif
+
 #include <signal.h>
 #include <pthread.h>
 #if HAVE_PTHREAD_NP_H
@@ -1058,6 +1065,10 @@ CorUnix::InternalSetThreadPriority(
         goto InternalSetThreadPriorityExit;
     }
 
+#ifdef HOST_HORIZ
+    // Horizon threads have no POSIX scheduling policy
+    pTargetThread->m_iThreadPriority = iNewPriority;
+#else // HOST_HORIZ
     /* get the previous thread schedule parameters.  We need to know the
        scheduling policy to determine the priority range */
     if (pthread_getschedparam(
@@ -1155,6 +1166,7 @@ CorUnix::InternalSetThreadPriority(
     }
 
     pTargetThread->m_iThreadPriority = iNewPriority;
+#endif // HOST_HORIZ
 
 InternalSetThreadPriorityExit:
 
@@ -2462,6 +2474,10 @@ CPalThread::GetStackBase()
 #ifdef TARGET_APPLE
     // This is a Mac specific method
     stackBase = pthread_get_stackaddr_np(pthread_self());
+#elif defined(HOST_HORIZ)
+    // Threads run on the stack mirror, an alias of the stack memory
+    Thread* thread = threadGetSelf();
+    stackBase = (BYTE*)thread->stack_mirror + thread->stack_sz;
 #else
     pthread_attr_t attr;
     void* stackAddr;
@@ -2507,6 +2523,8 @@ CPalThread::GetStackLimit()
     // This is a Mac specific method
     stackLimit = ((BYTE *)pthread_get_stackaddr_np(pthread_self()) -
                    pthread_get_stacksize_np(pthread_self()));
+#elif defined(HOST_HORIZ)
+    stackLimit = threadGetSelf()->stack_mirror;
 #else
     pthread_attr_t attr;
     size_t stackSize;

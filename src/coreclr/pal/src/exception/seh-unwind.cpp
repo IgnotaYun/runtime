@@ -23,8 +23,10 @@ Abstract:
 #include "pal.h"
 #include <dlfcn.h>
 
+#ifndef TARGET_HORIZ
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
+#endif // !TARGET_HORIZ
 #else // HOST_UNIX
 
 #include <windows.h>
@@ -43,6 +45,10 @@ Abstract:
 #define PALAPI
 
 #endif // HOST_UNIX
+
+// horiz has no libunwind; its PAL_VirtualUnwind evaluates the DWARF CFI with
+// libgcc's FDE lookup (horiz/unwind-horiz.cpp).
+#ifndef TARGET_HORIZ
 
 #if defined(__APPLE__) && defined(HOST_ARM64) && !defined(HAVE_UNW_AARCH64_X19)
 // MacOS uses ARM64 instead of AARCH64 to describe these registers
@@ -640,6 +646,8 @@ void GetContextPointers(unw_cursor_t *cursor, unw_context_t *unwContext, KNONVOL
 #endif
 }
 
+#endif // !TARGET_HORIZ
+
 #ifndef HOST_WINDOWS
 
 // Frame pointer relative offset of a local containing a pointer to the windows style context of a location
@@ -649,6 +657,7 @@ int g_hardware_exception_context_locvar_offset = 0;
 // where an activation signal interrupted the thread.
 int g_inject_activation_context_locvar_offset = 0;
 
+#ifndef TARGET_HORIZ
 BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextPointers)
 {
     int st;
@@ -774,6 +783,7 @@ BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextP
     }
     return TRUE;
 }
+#endif // !TARGET_HORIZ
 
 struct ExceptionRecords
 {

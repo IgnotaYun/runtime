@@ -860,7 +860,9 @@ namespace CorUnix
             BYTE * pRecvBuf,
             LONG lBytes);
 
+#if !defined(__wasm__) && !defined(TARGET_HORIZ)
         bool CreateProcessPipe();
+#endif // !__wasm__ && !TARGET_HORIZ
 
         PAL_ERROR ShutdownProcessPipe();
 

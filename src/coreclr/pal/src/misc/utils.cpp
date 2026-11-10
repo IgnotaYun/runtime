@@ -32,12 +32,48 @@ SET_DEFAULT_DEBUG_CHANNEL(MISC); // some headers have code with asserts, so do t
 
 #include <errno.h>
 #include <string.h>
+#include <time.h>
+#if HAVE_POLL
+#include <poll.h>
+#else
+#include "pal/fakepoll.h"
+#endif // HAVE_POLL
 
 
 // In safemath.h, Template SafeInt uses macro _ASSERTE, which need to use variable
 // defdbgchan defined by SET_DEFAULT_DEBUG_CHANNEL. Therefore, the include statement
 // should be placed after the SET_DEFAULT_DEBUG_CHANNEL(MISC)
 #include <safemath.h>
+
+/*++
+Function:
+  UTIL_Sleep
+
+See header file for function details.
+--*/
+void UTIL_Sleep(int timeout)
+{
+#ifdef HOST_HORIZ
+    // libnx/libounce's poll only works on sockets and fails at once without any
+    // descriptors
+    if (timeout < 0)
+    {
+        while (true)
+        {
+            sleep(3600);
+        }
+    }
+
+    struct timespec req;
+    req.tv_sec = timeout / 1000;
+    req.tv_nsec = (long)(timeout % 1000) * 1000000;
+    while (nanosleep(&req, &req) == -1 && errno == EINTR)
+    {
+    }
+#else
+    poll(NULL, 0, timeout);
+#endif // HOST_HORIZ
+}
 
 /*++
 Function:
