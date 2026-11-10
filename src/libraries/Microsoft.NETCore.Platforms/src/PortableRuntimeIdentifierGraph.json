@@ -138,6 +138,17 @@
           "ios-x86"
         ]
       },
+      "horiz": {
+        "#import": [
+          "unix"
+        ]
+      },
+      "horiz-arm64": {
+        "#import": [
+          "horiz",
+          "unix-arm64"
+        ]
+      },
       "linux": {
         "#import": [
           "unix"
