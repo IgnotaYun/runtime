@@ -1300,6 +1300,36 @@ void CodeGen::genCodeForNullCheck(GenTreeIndir* tree)
     GenTree* op1 = tree->gtOp1;
 
     genConsumeRegs(op1);
+
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+    if (compiler->compExplicitNullChecks())
+    {
+        // Lowering made the check explicit and marked what it proved redundant.
+        if ((tree->gtFlags & GTF_IND_NONFAULTING) != 0)
+        {
+            return;
+        }
+
+        size_t         maxNullValue = 0;
+        GenTree* const reference    = compiler->gtGetNullCheckReference(op1, &maxNullValue);
+        noway_assert(reference != nullptr);
+        const regNumber reg = reference->GetRegNum();
+
+        genJumpToThrowHlpBlk(SCK_NULL_CHECK, [&](BasicBlock* target, bool isInline) {
+            if (maxNullValue == 0)
+            {
+                GetEmitter()->emitIns_J_R(isInline ? INS_cbnz : INS_cbz, EA_8BYTE, target, reg);
+            }
+            else
+            {
+                GetEmitter()->emitIns_R_I(INS_cmp, EA_8BYTE, reg, (ssize_t)maxNullValue);
+                inst_JMP(isInline ? EJ_hi : EJ_ls, target);
+            }
+        });
+        return;
+    }
+#endif // FEATURE_EXPLICIT_NULL_CHECKS
+
     regNumber targetReg = REG_ZR;
 
     GetEmitter()->emitInsLoadStoreOp(ins_Load(tree->TypeGet()), emitActualTypeSize(tree), targetReg, tree);

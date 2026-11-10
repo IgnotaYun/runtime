@@ -182,6 +182,19 @@ void StackLevelSetter::ProcessBlock(BasicBlock* block)
 
         if (checkForHelpers)
         {
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+            // Codegen emits an explicit check, and so uses the helper, for every
+            // null check that is not marked non-faulting.
+            if (comp->compExplicitNullChecks() && node->OperIs(GT_NULLCHECK))
+            {
+                if ((node->gtFlags & GTF_IND_NONFAULTING) == 0)
+                {
+                    SetThrowHelperBlock(SCK_NULL_CHECK, block);
+                }
+                continue;
+            }
+#endif // FEATURE_EXPLICIT_NULL_CHECKS
+
             if (((node->gtFlags & GTF_EXCEPT) != 0) && node->OperMayThrow(comp))
             {
                 SetThrowHelperBlocks(node, block);

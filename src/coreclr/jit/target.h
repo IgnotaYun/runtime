@@ -9,6 +9,13 @@
 #define FEATURE_CFI_SUPPORT
 #endif
 
+// Horizon does not deliver memory faults to the process, so on horiz the JIT
+// cannot rely on a fault to raise NullReferenceException. Lowering makes every
+// null check explicit instead (see Lowering::InsertExplicitNullChecks).
+#if defined(TARGET_HORIZ) && defined(TARGET_ARM64)
+#define FEATURE_EXPLICIT_NULL_CHECKS
+#endif
+
 // Undefine all of the target OS macros
 // Within the JIT codebase we use the TargetOS features
 #ifdef TARGET_UNIX

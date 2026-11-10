@@ -8509,6 +8509,28 @@ PhaseStatus Lowering::DoPhase()
         LowerBlock(block);
     }
 
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+    // This runs after all other lowering so that it also sees the accesses
+    // lowering itself introduces (vtable loads, block store helpers, ...).
+    if (comp->compExplicitNullChecks())
+    {
+        const unsigned blockCount = comp->fgBBcount;
+
+        for (BasicBlock* const block : comp->Blocks())
+        {
+            comp->compCurBB = block;
+            InsertExplicitNullChecks(block);
+            assert(CheckBlock(comp, block));
+        }
+
+        if (comp->fgBBcount != blockCount)
+        {
+            // New throw helper blocks are not part of a DFS computed earlier.
+            comp->fgInvalidateDfsTree();
+        }
+    }
+#endif // FEATURE_EXPLICIT_NULL_CHECKS
+
 #ifdef DEBUG
     JITDUMP("Lower has completed modifying nodes.\n");
     if (VERBOSE)
@@ -8560,6 +8582,290 @@ PhaseStatus Lowering::DoPhase()
 
     return PhaseStatus::MODIFIED_EVERYTHING;
 }
+
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+//------------------------------------------------------------------------
+// InsertExplicitNullChecks: Make the null checks of a block explicit.
+//
+// Arguments:
+//    block - the block
+//
+// Notes:
+//    Every node that would rely on a memory fault to raise NullReferenceException
+//    gets a GT_NULLCHECK of its reference inserted before it, and is marked as
+//    not faulting. In this mode codegen emits a GT_NULLCHECK as a compare and
+//    branch to an SCK_NULL_CHECK throw helper (see genCodeForNullCheck) rather
+//    than as a load.
+//
+//    Accesses that earlier phases proved non-faulting (GTF_IND_NONFAULTING from
+//    assertion prop, folded null checks, non-null address shapes recognized by
+//    fgAddrCouldBeNull) are left alone. Within the block, a local that has
+//    already been checked, and not redefined since, is not checked again.
+//
+void Lowering::InsertExplicitNullChecks(BasicBlock* block)
+{
+    m_block = block;
+    m_nullCheckedLocals.Reset();
+
+    GenTree* node = BlockRange().FirstNode();
+    while (node != nullptr)
+    {
+        // Checks are inserted before 'node', so they are not visited.
+        GenTree* const next = node->gtNext;
+        GenTree*       addr = nullptr;
+
+        switch (node->OperGet())
+        {
+            case GT_INDEX_ADDR:
+                // Codegen loads the length for the bounds check.
+                if (node->AsIndexAddr()->IsBoundsChecked() && ((node->gtFlags & GTF_INX_ADDR_NONNULL) == 0))
+                {
+                    addr = node->AsIndexAddr()->Arr();
+                }
+                break;
+
+            case GT_CALL:
+                // Stub dispatch relies on the stub's load of the method table to fault.
+                if (node->AsCall()->NeedsNullCheck() || node->AsCall()->IsVirtualStub())
+                {
+                    addr = node->AsCall()->gtArgs.GetThisArg()->GetNode();
+                    if (addr->OperIsPutArg())
+                    {
+                        addr = addr->gtGetOp1();
+                    }
+                }
+                break;
+
+#ifdef FEATURE_HW_INTRINSICS
+            case GT_HWINTRINSIC:
+                if (!node->AsHWIntrinsic()->OperIsMemoryLoad(&addr))
+                {
+                    node->AsHWIntrinsic()->OperIsMemoryStore(&addr);
+                }
+                break;
+#endif // FEATURE_HW_INTRINSICS
+
+            default:
+                // All indirections, including block ops, atomics and existing null checks.
+                if (node->OperIsIndir() && ((node->gtFlags & GTF_IND_NONFAULTING) == 0))
+                {
+                    addr = node->AsIndir()->Addr();
+                }
+                break;
+        }
+
+        if (addr != nullptr)
+        {
+            InsertExplicitNullCheck(node, addr);
+        }
+
+        // Anything 'node' defines is no longer known to be non-null.
+        node->VisitLocalDefs(comp, [this](const LocalDef& def) {
+            InvalidateNullCheckedLocal(def.Def->GetLclNum());
+            return GenTree::VisitResult::Continue;
+        });
+
+        node = next;
+    }
+}
+
+//------------------------------------------------------------------------
+// InsertExplicitNullCheck: Make the null check of one access explicit.
+//
+// Arguments:
+//    node - the node that dereferences 'addr'
+//    addr - the address 'node' accesses, or the reference it checks
+//
+void Lowering::InsertExplicitNullCheck(GenTree* node, GenTree* addr)
+{
+    size_t   maxNullValue = 0;
+    GenTree* reference    = comp->gtGetNullCheckReference(addr, &maxNullValue);
+
+    if ((reference == nullptr) && addr->isContained() && addr->OperIs(GT_LEA))
+    {
+        GenTreeAddrMode* const lea = addr->AsAddrMode();
+        if (lea->HasBase() && !lea->Base()->isContained() && lea->HasIndex())
+        {
+            // Neither operand has a GC type, so the pointer cannot be told from
+            // the index: materialize the effective address and check it instead.
+            addr->ClearContained();
+            reference = comp->gtGetNullCheckReference(addr, &maxNullValue);
+        }
+    }
+
+    // Unoptimized code computes field addresses as 'obj + offset'; test the
+    // object itself, which is cheaper and can be shared with other accesses.
+    while ((reference != nullptr) && reference->OperIs(GT_ADD) && !reference->isContained() &&
+           reference->gtGetOp1()->TypeIs(TYP_REF, TYP_BYREF) && !reference->gtGetOp1()->isContained() &&
+           reference->gtGetOp2()->IsCnsIntOrI() && !reference->gtGetOp2()->IsIconHandle() &&
+           (reference->gtGetOp2()->AsIntCon()->IconValue() >= 0) &&
+           !comp->fgIsBigOffset(reference->gtGetOp2()->AsIntCon()->IconValue()))
+    {
+        const size_t offset = (size_t)reference->gtGetOp2()->AsIntCon()->IconValue();
+        reference           = reference->gtGetOp1();
+
+        // An object reference is either null or valid; a byref may point into
+        // the null page, so the bound shrinks by the peeled offset.
+        maxNullValue = reference->TypeIs(TYP_REF) ? 0 : ((maxNullValue > offset) ? (maxNullValue - offset) : 0);
+    }
+
+    if ((reference == nullptr) || !comp->fgAddrCouldBeNull(reference) ||
+        (reference->IsCnsIntOrI() && ((size_t)reference->AsIntCon()->IconValue() > maxNullValue)))
+    {
+        MarkNullChecked(node);
+        return;
+    }
+
+    // A local can be tested again at 'node' if its value there is the same.
+    unsigned lclNum = BAD_VAR_NUM;
+    if (reference->OperIs(GT_LCL_VAR) && !comp->lvaGetDesc(reference->AsLclVar())->IsAddressExposed() &&
+        IsInvariantInRange(reference, node))
+    {
+        lclNum = reference->AsLclVar()->GetLclNum();
+
+        if (IsNullCheckedLocal(lclNum, maxNullValue))
+        {
+            JITDUMP("Explicit null check of V%02u for [%06u] is redundant\n", lclNum, comp->dspTreeID(node));
+
+            if (node->OperIs(GT_NULLCHECK) && (addr == reference))
+            {
+                BlockRange().Remove(reference);
+                BlockRange().Remove(node);
+            }
+            else
+            {
+                MarkNullChecked(node);
+            }
+            return;
+        }
+    }
+
+    if (comp->fgUseThrowHelperBlocks())
+    {
+        comp->fgGetExcptnTarget(SCK_NULL_CHECK, m_block, /* createIfNeeded */ true);
+    }
+
+    if (node->OperIs(GT_NULLCHECK))
+    {
+        // Already explicit; codegen tests the same reference.
+        if (lclNum != BAD_VAR_NUM)
+        {
+            m_nullCheckedLocals.Push({lclNum, maxNullValue});
+        }
+        return;
+    }
+
+    GenTree* check;
+    if (lclNum != BAD_VAR_NUM)
+    {
+        check = comp->gtNewLclvNode(lclNum, reference->TypeGet());
+        if ((reference->gtFlags & GTF_VAR_DEATH) != 0)
+        {
+            reference->gtFlags &= ~GTF_VAR_DEATH;
+            check->gtFlags |= GTF_VAR_DEATH;
+        }
+    }
+    else if (reference->IsCnsIntOrI())
+    {
+        check = comp->gtClone(reference);
+    }
+    else
+    {
+        LIR::Use use;
+        bool     found = BlockRange().TryGetUse(reference, &use);
+        assert(found);
+        lclNum = use.ReplaceWithLclVar(comp);
+        check  = comp->gtNewLclvNode(lclNum, genActualType(reference));
+    }
+
+    GenTree* const nullCheck = comp->gtNewNullCheck(check);
+    BlockRange().InsertBefore(node, check, nullCheck);
+    MarkNullChecked(node);
+
+    JITDUMP("Inserted explicit null check [%06u] for [%06u]\n", comp->dspTreeID(nullCheck), comp->dspTreeID(node));
+
+    if (check->OperIs(GT_LCL_VAR))
+    {
+        m_nullCheckedLocals.Push({lclNum, maxNullValue});
+    }
+}
+
+//------------------------------------------------------------------------
+// MarkNullChecked: Record that a node no longer needs its own null check.
+//
+// Arguments:
+//    node - the node
+//
+void Lowering::MarkNullChecked(GenTree* node)
+{
+    if (node->OperIsIndir())
+    {
+        node->gtFlags |= GTF_IND_NONFAULTING;
+    }
+    else if (node->OperIs(GT_INDEX_ADDR))
+    {
+        node->gtFlags |= GTF_INX_ADDR_NONNULL;
+    }
+    else if (node->IsCall())
+    {
+        node->gtFlags &= ~GTF_CALL_NULLCHECK;
+    }
+}
+
+//------------------------------------------------------------------------
+// IsNullCheckedLocal: Is a local known to be non-null at this point of the block?
+//
+// Arguments:
+//    lclNum       - the local
+//    maxNullValue - the largest value that would count as null
+//
+bool Lowering::IsNullCheckedLocal(unsigned lclNum, size_t maxNullValue)
+{
+    for (int i = 0; i < m_nullCheckedLocals.Height(); i++)
+    {
+        const NullCheckedLocal& entry = m_nullCheckedLocals.Bottom(i);
+        if ((entry.lclNum == lclNum) && (entry.maxNullValue >= maxNullValue))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+//------------------------------------------------------------------------
+// InvalidateNullCheckedLocal: Forget what is known about a redefined local.
+//
+// Arguments:
+//    lclNum - the local
+//
+void Lowering::InvalidateNullCheckedLocal(unsigned lclNum)
+{
+    if (m_nullCheckedLocals.Empty())
+    {
+        return;
+    }
+
+    LclVarDsc* const varDsc = comp->lvaGetDesc(lclNum);
+
+    int dst = 0;
+    for (int i = 0; i < m_nullCheckedLocals.Height(); i++)
+    {
+        const NullCheckedLocal entry = m_nullCheckedLocals.Bottom(i);
+        bool const             isDefined =
+            (entry.lclNum == lclNum) ||
+            (varDsc->lvPromoted && (entry.lclNum >= varDsc->lvFieldLclStart) &&
+             (entry.lclNum < (unsigned)(varDsc->lvFieldLclStart + varDsc->lvFieldCnt)));
+
+        if (!isDefined)
+        {
+            m_nullCheckedLocals.BottomRef(dst++) = entry;
+        }
+    }
+
+    m_nullCheckedLocals.Pop(m_nullCheckedLocals.Height() - dst);
+}
+#endif // FEATURE_EXPLICIT_NULL_CHECKS
 
 //------------------------------------------------------------------------
 // Lowering::MapParameterRegisterLocals:

@@ -6803,12 +6803,15 @@ private:
     AddCodeDscMap* fgAddCodeDscMap = nullptr;
 
     void fgAddCodeRef(BasicBlock* srcBlk, SpecialCodeKind kind);
+    AddCodeDsc* fgCreateAddCodeDsc(BasicBlock* srcBlk, SpecialCodeKind kind);
+    void fgCreateThrowHelperBlock(AddCodeDsc* add);
     PhaseStatus fgCreateThrowHelperBlocks();
 
 public:
 
     bool fgHasAddCodeDscMap() const { return fgAddCodeDscMap != nullptr; }
     AddCodeDsc* fgFindExcptnTarget(SpecialCodeKind kind, BasicBlock* fromBlock);
+    AddCodeDsc* fgGetExcptnTarget(SpecialCodeKind kind, BasicBlock* fromBlock, bool createIfNeeded = false);
     bool fgUseThrowHelperBlocks();
     void fgCreateThrowHelperBlockCode(AddCodeDsc* add);
     void fgSequenceLocals(Statement* stmt);
@@ -11097,6 +11100,20 @@ public:
 
 protected:
     size_t compMaxUncheckedOffsetForNullObject;
+
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+public:
+    // True if lowering turns every implicit (fault based) null check into an
+    // explicit compare and branch to an SCK_NULL_CHECK throw helper.
+    bool compExplicitNullChecks() const
+    {
+        return JitConfig.JitExplicitNullChecks() != 0;
+    }
+
+    GenTree* gtGetNullCheckReference(GenTree* addr, size_t* maxNullValue);
+
+protected:
+#endif // FEATURE_EXPLICIT_NULL_CHECKS
 
     void compInitOptions(JitFlags* compileFlags);
 

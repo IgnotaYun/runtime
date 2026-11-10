@@ -28,6 +28,9 @@ public:
 #ifdef TARGET_ARM64
         , m_blockIndirs(compiler->getAllocator(CMK_ArrayStack))
 #endif
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+        , m_nullCheckedLocals(compiler->getAllocator(CMK_ArrayStack))
+#endif
     {
         m_lsra = (LinearScan*)lsra;
         assert(m_lsra);
@@ -591,6 +594,20 @@ private:
 
     void RequireOutgoingArgSpace(GenTree* node, unsigned numBytes);
 
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+    struct NullCheckedLocal
+    {
+        unsigned lclNum;
+        size_t   maxNullValue;
+    };
+
+    void InsertExplicitNullChecks(BasicBlock* block);
+    void InsertExplicitNullCheck(GenTree* node, GenTree* addr);
+    void MarkNullChecked(GenTree* node);
+    bool IsNullCheckedLocal(unsigned lclNum, size_t maxNullValue);
+    void InvalidateNullCheckedLocal(unsigned lclNum);
+#endif // FEATURE_EXPLICIT_NULL_CHECKS
+
     LinearScan*           m_lsra;
     unsigned              vtableCallTemp;       // local variable we use as a temp for vtable calls
     mutable SideEffectSet m_scratchSideEffects; // SideEffectSet used for IsSafeToContainMem and isRMWIndirCandidate
@@ -616,6 +633,11 @@ private:
     };
     ArrayStack<SavedIndir> m_blockIndirs;
     bool                   m_ffrTrashed;
+#endif
+
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+    // Locals known to be non-null at the current point of InsertExplicitNullChecks.
+    ArrayStack<NullCheckedLocal> m_nullCheckedLocals;
 #endif
 };
 

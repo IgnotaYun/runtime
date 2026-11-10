@@ -321,6 +321,15 @@ RELEASE_CONFIG_INTEGER(JitDisasmTesting, "JitDisasmTesting", 0)   // Display BEG
 RELEASE_CONFIG_INTEGER(JitDisasmDiffable, "JitDisasmDiffable", 0) // Make the disassembly diff-able
 RELEASE_CONFIG_INTEGER(JitDisasmSummary, "JitDisasmSummary", 0)   // Prints all jitted methods to the console
 
+// Keep in sync with FEATURE_EXPLICIT_NULL_CHECKS in target.h, which is not
+// included yet here.
+#if defined(TARGET_HORIZ) && defined(TARGET_ARM64)
+// 1: null checks are explicit compares and branches (the target cannot turn
+// memory faults into NullReferenceException). 0: implicit, fault based null
+// checks; requires a fault handler that raises the exception.
+RELEASE_CONFIG_INTEGER(JitExplicitNullChecks, "JitExplicitNullChecks", 1)
+#endif // TARGET_HORIZ && TARGET_ARM64
+
 // Hides disassembly for unoptimized codegen
 RELEASE_CONFIG_INTEGER(JitDisasmOnlyOptimized, "JitDisasmOnlyOptimized", 0)
 

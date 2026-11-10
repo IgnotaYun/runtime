@@ -7025,6 +7025,91 @@ bool GenTree::IndirMayFault(Compiler* compiler)
     return ((gtFlags & GTF_IND_NONFAULTING) == 0) && compiler->fgAddrCouldBeNull(GetIndirOrArrMetaDataAddr());
 }
 
+#ifdef FEATURE_EXPLICIT_NULL_CHECKS
+//------------------------------------------------------------------------------
+// gtGetNullCheckReference: Find the value an explicit null check of a
+//   (lowered) address has to test.
+//
+// Arguments:
+//    addr         - the address of an access, possibly a contained LEA
+//    maxNullValue - [out] the largest value of the reference that has to be
+//                   treated as null
+//
+// Return Value:
+//    The node holding the reference, or nullptr if the address cannot be null
+//    (a local's address, a TLS or other contained constant) or no operand
+//    of it is known to be the reference.
+//
+// Notes:
+//    An object reference is either null or a valid object, so it is only
+//    compared with zero. Any other pointer that points into the protected
+//    null area would make the access fault, i.e. throw NullReferenceException
+//    on targets with implicit null checks; such values are treated as null.
+//    Index registers only move the address away from the reference, and
+//    are ignored, but when no operand has a GC type and there is an index,
+//    the reference cannot be told from the index.
+//
+GenTree* Compiler::gtGetNullCheckReference(GenTree* addr, size_t* maxNullValue)
+{
+    GenTree* reference = addr;
+
+    if (addr->isContained())
+    {
+        if (!addr->OperIs(GT_LEA))
+        {
+            return nullptr;
+        }
+
+        GenTreeAddrMode* const addrMode = addr->AsAddrMode();
+        GenTree* const         base     = addrMode->Base();
+        GenTree* const         index    = addrMode->Index();
+
+        auto isRegOperand = [](GenTree* node) {
+            return (node != nullptr) && !node->isContained();
+        };
+
+        if (isRegOperand(base) && varTypeIsGC(base))
+        {
+            reference = base;
+        }
+        else if (isRegOperand(index) && varTypeIsGC(index))
+        {
+            reference = index;
+        }
+        else if (isRegOperand(base) && (index == nullptr))
+        {
+            reference = base;
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
+
+    if (!reference->TypeIs(TYP_REF, TYP_BYREF, TYP_I_IMPL))
+    {
+        return nullptr;
+    }
+
+    if (reference->TypeIs(TYP_REF))
+    {
+        *maxNullValue = 0;
+    }
+    else
+    {
+        // Round down to a value CMP can encode as an immediate.
+        size_t bound = compMaxUncheckedOffsetForNullObject;
+        if (bound > 0xFFF)
+        {
+            bound &= ~(size_t)0xFFF;
+        }
+        *maxNullValue = bound;
+    }
+
+    return reference;
+}
+#endif // FEATURE_EXPLICIT_NULL_CHECKS
+
 //------------------------------------------------------------------------------
 // OperIsImplicitIndir : Check whether the operation contains an implicit indirection.
 //
