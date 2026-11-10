@@ -37,13 +37,22 @@ size_t horiz_fakemmap_used(void);
 int horiz_fakemmap_owns(const void* address);
 
 // Translate an address in the runtime's executable code arena to its writable
-// alias. Returns false for addresses outside the arena. *available is the number
-// of bytes from the address to the end of the arena.
+// alias. Returns false for addresses outside the arena or in parts of it that are
+// not backed yet. *available is the number of bytes from the address to the end
+// of the backed memory.
 bool minipal_horiz_get_write_alias(void* address, void** writable, size_t* available);
 
 // Make code written through the writable alias visible to instruction fetch.
-// Accepts either alias. Returns false for addresses outside the arena.
+// Accepts either alias. Returns false for ranges that are not entirely in backed
+// memory of the arena.
 bool minipal_horiz_flush_instruction_cache(void* address, size_t size);
+
+// The code arena reserves DOTNET_HorizCodeArenaReserve bytes (hexadecimal, 512 MB
+// by default) of address space and backs it in 64 MB chunks, one CodeMemory object
+// each, as the runtime commits code. Reports the reserved size, the backed size and
+// the number of chunks (CodeMemory objects) in use. Any pointer may be NULL.
+// Returns false before the arena is created.
+bool minipal_horiz_get_code_arena_info(size_t* reserved, size_t* backed, size_t* chunks);
 
 //
 // Hooks the application may implement (the runtime has weak defaults)
