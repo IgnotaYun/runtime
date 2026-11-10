@@ -1,7 +1,14 @@
 set(SOURCES
-    doublemapping.cpp
     dn-u16.cpp
 )
+
+if(CLR_CMAKE_TARGET_HORIZ)
+  list(APPEND SOURCES doublemapping-horiz.cpp)
+  # horiz_host.h declares the functions exported to the application
+  include_directories(${CLR_DIR}/pal/inc)
+else()
+  list(APPEND SOURCES doublemapping.cpp)
+endif()
 
 add_library(coreclrminipal_objects
     OBJECT
