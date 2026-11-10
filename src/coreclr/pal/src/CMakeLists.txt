@@ -184,6 +184,15 @@ if(CLR_CMAKE_HOST_HORIZ)
   if(CLR_CMAKE_HORIZ_LIBC_SHIMS)
     list(APPEND PLATFORM_SOURCES horiz/libc-shims-horiz.c)
   endif()
+
+  # Hardware exceptions enter the application at __libnx_exception_entry,
+  # which forwards them to PAL_HorizHandleUserException (see horiz_host.h).
+  # Hosts that do not provide one can build the runtime's instead.
+  option(CLR_CMAKE_HORIZ_EXCEPTION_ENTRY "Build the runtime's __libnx_exception_entry into the PAL (see horiz/exceptionentry-horiz.S)" OFF)
+  if(CLR_CMAKE_HORIZ_EXCEPTION_ENTRY)
+    list(APPEND PLATFORM_SOURCES horiz/exceptionentry-horiz.S)
+    set_source_files_properties(horiz/exception-horiz.cpp PROPERTIES COMPILE_DEFINITIONS HORIZ_EXCEPTION_ENTRY)
+  endif()
 endif(CLR_CMAKE_HOST_HORIZ)
 
 if(CLR_CMAKE_HOST_ARCH_ARM)

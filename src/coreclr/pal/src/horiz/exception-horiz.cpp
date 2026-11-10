@@ -84,10 +84,24 @@ PAL_HorizSetManagedFaultIpCheck(
     s_managedFaultIpCheck = check;
 }
 
+#ifdef HORIZ_EXCEPTION_ENTRY
+// The runtime's exception entry (exceptionentry-horiz.S), which replaces
+// libnx/libounce's weak default
+extern "C" void __libnx_exception_entry();
+static void (*volatile s_runtimeExceptionEntry)() = __libnx_exception_entry;
+#endif
+
 BOOL
 PALAPI
 PAL_HorizHasExceptionEntry()
 {
+#ifdef HORIZ_EXCEPTION_ENTRY
+    if (s_runtimeExceptionEntry != NULL)
+    {
+        return TRUE;
+    }
+#endif
+
     return s_hostExceptionEntry;
 }
 

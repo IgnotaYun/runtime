@@ -108,6 +108,12 @@ void horiz_flush_process_write_buffers(void);
 //    runtime's: restore x9-x29 and the FP/SIMD registers from the state and
 //    continue with the application's crash handling.
 //
+// The application owns __libnx_exception_entry. Applications without one can
+// build the runtime's instead (-DCLR_CMAKE_HORIZ_EXCEPTION_ENTRY=ON, see
+// pal/src/horiz/exceptionentry-horiz.S), which returns 0xf801 to the kernel for
+// the exceptions that the runtime does not handle; they must then not define
+// the symbol themselves.
+//
 // The kernel lets one thread at a time run in exception mode (the others wait),
 // so the state and the stack of step 2 may be static. A fault inside the
 // handler terminates the process, so the handler only reads the runtime's data
