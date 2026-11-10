@@ -572,6 +572,12 @@ PTR_ReadyToRunInfo ReadyToRunInfo::Initialize(Module * pModule, AllocMemTracker 
         return NULL;
     }
 
+#ifdef TARGET_HORIZ
+    // Images are loaded into memory that cannot be made executable
+    DoLog("Ready to Run disabled - native code in images cannot be executed on horiz");
+    return NULL;
+#endif
+
     if (pModule->IsCollectible())
     {
         DoLog("Ready to Run disabled - collectible module");

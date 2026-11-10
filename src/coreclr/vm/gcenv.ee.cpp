@@ -44,18 +44,21 @@ void GCToEEInterface::SuspendEE(SUSPEND_REASON reason)
 
     _ASSERTE(reason == SUSPEND_FOR_GC || reason == SUSPEND_FOR_GC_PREP);
 
-    g_pDebugInterface->SuspendForGarbageCollectionStarted();
+    if (g_pDebugInterface != NULL)
+        g_pDebugInterface->SuspendForGarbageCollectionStarted();
 
     ThreadSuspend::SuspendEE((ThreadSuspend::SUSPEND_REASON)reason);
 
-    g_pDebugInterface->SuspendForGarbageCollectionCompleted();
+    if (g_pDebugInterface != NULL)
+        g_pDebugInterface->SuspendForGarbageCollectionCompleted();
 }
 
 void GCToEEInterface::RestartEE(bool bFinishedGC)
 {
     WRAPPER_NO_CONTRACT;
 
-    g_pDebugInterface->ResumeForGarbageCollectionStarted();
+    if (g_pDebugInterface != NULL)
+        g_pDebugInterface->ResumeForGarbageCollectionStarted();
 
     ThreadSuspend::RestartEE(bFinishedGC, TRUE);
 }

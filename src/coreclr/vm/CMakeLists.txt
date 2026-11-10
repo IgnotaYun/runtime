@@ -16,9 +16,10 @@ include_directories(${CLR_SRC_NATIVE_DIR}/libs/Common)
 add_definitions(-DUNICODE)
 add_definitions(-D_UNICODE)
 
-if(CLR_CMAKE_TARGET_ANDROID)
+if(CLR_CMAKE_TARGET_ANDROID OR CLR_CMAKE_TARGET_HORIZ)
+    # horiz: the thread pointer is read in software (-mtp=soft)
     add_definitions(-DFEATURE_EMULATED_TLS)
-endif(CLR_CMAKE_TARGET_ANDROID)
+endif(CLR_CMAKE_TARGET_ANDROID OR CLR_CMAKE_TARGET_HORIZ)
 
 if(FEATURE_AUTO_TRACE)
     add_definitions(-DFEATURE_AUTO_TRACE)
@@ -387,6 +388,12 @@ set(VM_SOURCES_WKS
 if (CLR_CMAKE_TARGET_UNIX AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
     list(APPEND VM_SOURCES_WKS
         ${RUNTIME_DIR}/asyncsafethreadmap.cpp
+    )
+endif()
+
+if (CLR_CMAKE_TARGET_HORIZ)
+    list(APPEND VM_SOURCES_WKS
+        horiz/debuggerstubs.cpp
     )
 endif()
 

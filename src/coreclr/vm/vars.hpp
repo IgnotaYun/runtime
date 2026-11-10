@@ -568,6 +568,9 @@ typedef DPTR(GSCookie) PTR_GSCookie;
 #else
 #ifdef __APPLE__
 #define READONLY_ATTR_ARGS section("__DATA,__const")
+#elif defined(TARGET_HORIZ)
+// InitGSCookie cannot make .rodata writable: mprotect has no effect on horiz
+#define READONLY_ATTR_ARGS section(".data")
 #else
 #define READONLY_ATTR_ARGS section(".rodata")
 #endif
