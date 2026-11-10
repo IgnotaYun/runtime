@@ -151,7 +151,9 @@ typedef struct PAL_HorizExceptionState
 bool PAL_HorizHandleUserException(PAL_HorizExceptionState* state);
 
 // Declare that the application's exception entry calls
-// PAL_HorizHandleUserException. Call before initializing the runtime.
+// PAL_HorizHandleUserException. Call before initializing the runtime, which
+// refuses JitExplicitNullChecks=0 (code that relies on null references
+// faulting) unless exceptions reach it.
 void PAL_HorizRegisterExceptionEntry(void);
 
 //

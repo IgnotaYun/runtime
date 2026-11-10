@@ -899,6 +899,20 @@ void EEStartupHelper()
 
         InitializeExceptionHandling();
 
+#ifdef HOST_HORIZ
+        // Code compiled without explicit null checks relies on null references
+        // faulting, which only become managed exceptions if the application
+        // forwards hardware exceptions to the runtime. Fail now rather than at
+        // the first null reference. (The horiz mirror has signals.)
+        if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_JitExplicitNullChecks) == 0 && !PAL_HorizHasExceptionEntry())
+        {
+            EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(COR_E_EXECUTIONENGINE,
+                W("JitExplicitNullChecks=0 needs hardware exceptions: the application's __libnx_exception_entry must ")
+                W("forward them to PAL_HorizHandleUserException and call PAL_HorizRegisterExceptionEntry (horiz_host.h), ")
+                W("or the runtime must be built with CLR_CMAKE_HORIZ_EXCEPTION_ENTRY=ON"));
+        }
+#endif // HOST_HORIZ
+
         //
         // Install our global exception filter
         //
