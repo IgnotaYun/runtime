@@ -171,6 +171,14 @@ if(CLR_CMAKE_HOST_HORIZ)
     horiz/dlfcn-horiz.c
     horiz/signal-horiz.cpp
   )
+
+  # The libc functions that newlib declares but does not implement (sysconf,
+  # pipe, flock, ...) come from the application. Hosts that do not provide
+  # them can build the runtime's copy instead.
+  option(CLR_CMAKE_HORIZ_LIBC_SHIMS "Build the libc functions that newlib lacks into the PAL (see horiz/libc-shims-horiz.c)" OFF)
+  if(CLR_CMAKE_HORIZ_LIBC_SHIMS)
+    list(APPEND PLATFORM_SOURCES horiz/libc-shims-horiz.c)
+  endif()
 endif(CLR_CMAKE_HOST_HORIZ)
 
 if(CLR_CMAKE_HOST_ARCH_ARM)
