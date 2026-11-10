@@ -1273,6 +1273,13 @@ namespace System.Net.Sockets
 
             _receiveQueue.Init();
             _sendQueue.Init();
+#if TARGET_HORIZ
+            // Horizon serves sockets through a small, fixed number of BSD service
+            // sessions, and a blocking call holds one until it returns. Keep every
+            // socket non-blocking and emulate blocking operations here, so that
+            // blocked receives cannot starve the sends and polls of other sockets.
+            SetHandleNonBlocking();
+#endif
         }
 
         public bool PreferInlineCompletions

@@ -131,7 +131,11 @@ namespace System.IO
 
         public static bool IsPathRooted(ReadOnlySpan<char> path)
         {
+#if TARGET_HORIZ
+            return PathInternal.GetRootLength(path) > 0;
+#else
             return path.StartsWith(PathInternal.DirectorySeparatorChar);
+#endif
         }
 
         /// <summary>
@@ -140,12 +144,20 @@ namespace System.IO
         public static string? GetPathRoot(string? path)
         {
             if (PathInternal.IsEffectivelyEmpty(path)) return null;
+#if TARGET_HORIZ
+            return path!.Substring(0, PathInternal.GetRootLength(path));
+#else
             return IsPathRooted(path) ? PathInternal.DirectorySeparatorCharAsString : string.Empty;
+#endif
         }
 
         public static ReadOnlySpan<char> GetPathRoot(ReadOnlySpan<char> path)
         {
+#if TARGET_HORIZ
+            return path.Slice(0, PathInternal.GetRootLength(path));
+#else
             return IsPathRooted(path) ? PathInternal.DirectorySeparatorCharAsString.AsSpan() : ReadOnlySpan<char>.Empty;
+#endif
         }
 
     }

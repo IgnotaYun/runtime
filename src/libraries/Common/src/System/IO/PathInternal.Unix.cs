@@ -21,6 +21,16 @@ namespace System.IO
 
         internal static int GetRootLength(ReadOnlySpan<char> path)
         {
+#if TARGET_HORIZ
+            // Horizon paths are rooted at a mounted device ("sdmc:/", "romfs:/") or at "/",
+            // which is the root of the default device.
+            int colon = path.IndexOf(':');
+            if (colon > 0 && colon + 1 < path.Length && IsDirectorySeparator(path[colon + 1]) &&
+                !path.Slice(0, colon).Contains(DirectorySeparatorChar))
+            {
+                return colon + 2;
+            }
+#endif
             return path.Length > 0 && IsDirectorySeparator(path[0]) ? 1 : 0;
         }
 

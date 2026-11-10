@@ -47,11 +47,17 @@ namespace System.Threading
             bool currentUserOnly = false;
             if (!string.IsNullOrEmpty(name))
             {
+#if TARGET_HORIZ
+                // Named mutexes are backed by files in a shared directory, which
+                // Horizon cannot share or lock
+                throw new PlatformNotSupportedException(SR.PlatformNotSupported_NamedSynchronizationPrimitives);
+#else
                 if (options.WasSpecified)
                 {
                     name = options.GetNameWithSessionPrefix(name);
                 }
                 currentUserOnly = CalculateUserScope(options);
+#endif
             }
 
             SafeWaitHandle mutexHandle =
@@ -78,6 +84,9 @@ namespace System.Threading
             out Mutex? result)
         {
             ArgumentException.ThrowIfNullOrEmpty(name);
+#if TARGET_HORIZ
+            throw new PlatformNotSupportedException(SR.PlatformNotSupported_NamedSynchronizationPrimitives);
+#else
 
             bool currentUserOnly = CalculateUserScope(options);
             if (options.WasSpecified)
@@ -113,6 +122,7 @@ namespace System.Threading
 
             result = new Mutex(myHandle);
             return OpenExistingResult.Success;
+#endif // TARGET_HORIZ
         }
 
         private static bool CalculateUserScope(NamedWaitHandleOptionsInternal options)
