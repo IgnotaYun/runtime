@@ -1,7 +1,7 @@
 <Project>
     <PropertyGroup>
         <FeatureCoreCLR>true</FeatureCoreCLR>
-        <FeaturePerfTracing>true</FeaturePerfTracing>
+        <FeaturePerfTracing Condition="'$(TargetsHoriz)' != 'true'">true</FeaturePerfTracing>
         <FeatureEHFunclets>true</FeatureEHFunclets>
         <ProfilingSupportedBuild>true</ProfilingSupportedBuild>
     </PropertyGroup>
@@ -12,7 +12,7 @@
 
     <PropertyGroup Condition="'$(TargetsUnix)' == 'true'">
         <FeatureXplatEventSource Condition="'$(FeatureXplatEventSource)' == '' AND '$(TargetOS)' == 'linux'">true</FeatureXplatEventSource>
-        <FeatureComWrappers>true</FeatureComWrappers>
+        <FeatureComWrappers Condition="'$(TargetsHoriz)' != 'true'">true</FeatureComWrappers>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(TargetsWindows)' == 'true'">
@@ -27,7 +27,7 @@
         <FeatureObjCMarshal>true</FeatureObjCMarshal>
     </PropertyGroup>
 
-    <PropertyGroup Condition="('$(Platform)' == 'x64' OR '$(Platform)' == 'arm64') AND ('$(Configuration)' == 'debug' OR '$(Configuration)' == 'checked') AND '$(TargetsAndroid)' != 'true'">
+    <PropertyGroup Condition="('$(Platform)' == 'x64' OR '$(Platform)' == 'arm64') AND ('$(Configuration)' == 'debug' OR '$(Configuration)' == 'checked') AND '$(TargetsAndroid)' != 'true' AND '$(TargetsHoriz)' != 'true'">
         <FeatureInterpreter>true</FeatureInterpreter>
     </PropertyGroup>
 

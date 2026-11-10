@@ -629,6 +629,11 @@ set(JIT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 # Creates a static library "clrjit_static" to link into the VM.
 add_subdirectory(static)
 
+# horiz links only the static JIT into the runtime.
+if (CLR_CMAKE_TARGET_HORIZ)
+  return()
+endif()
+
 if (CLR_CMAKE_TARGET_APPLE)
   set(TARGET_OS_NAME unix_osx)
 elseif (CLR_CMAKE_TARGET_UNIX)

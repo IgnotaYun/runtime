@@ -56,7 +56,8 @@ endif (CLR_CMAKE_HOST_WIN32)
 
 add_definitions(-DFX_VER_INTERNALNAME_STR=CoreCLR.dll)
 
-if (NOT CLR_CMAKE_HOST_ARCH_WASM)
+# horiz has no dynamic loader; only coreclr_static is built.
+if (NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_HORIZ)
     add_library_clr(coreclr
         SHARED
         ${CLR_SOURCES}
@@ -73,7 +74,7 @@ if (NOT CLR_CMAKE_HOST_ARCH_WASM)
     set(LIB_CORDBEE cordbee_wks)
     set(LIB_INTEROP interop)
     set(LIB_CDAC_CONTRACT_DESCRIPTOR cdac_contract_descriptor)
-endif(NOT CLR_CMAKE_HOST_ARCH_WASM)
+endif()
 
 if (CLR_CMAKE_HOST_UNIX AND NOT CLR_CMAKE_TARGET_ARCH_WASM)
     set(LIB_UNWINDER unwinder_wks)
@@ -196,9 +197,9 @@ if (CLR_CMAKE_TARGET_OSX)
     find_library(FOUNDATION Foundation REQUIRED)
 endif()
 
-if(NOT CLR_CMAKE_HOST_ARCH_WASM)
+if(NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_HORIZ)
     target_link_libraries(coreclr PUBLIC ${CORECLR_LIBRARIES} ${CLRJIT_STATIC} ${CLRINTERPRETER_STATIC} cee_wks_core cee_wks ${FOUNDATION})
-endif(NOT CLR_CMAKE_HOST_ARCH_WASM)
+endif()
 
 target_link_libraries(coreclr_static PUBLIC ${CORECLR_LIBRARIES} cee_wks_core ${CORECLR_STATIC_CLRJIT_STATIC} ${CEE_WKS_STATIC} ${FOUNDATION})
 target_compile_definitions(coreclr_static PUBLIC CORECLR_EMBEDDED)
@@ -213,6 +214,17 @@ if (CLR_CMAKE_HOST_ANDROID)
         gcinfo
         libunwind
         log
+        minipal_objects
+        nativeresourcestring_objects
+    )
+endif()
+
+if (CLR_CMAKE_TARGET_HORIZ)
+    target_link_libraries(coreclr_static
+        PUBLIC
+        coreclrminipal_objects
+        coreclrpal_objects
+        gcinfo
         minipal_objects
         nativeresourcestring_objects
     )
@@ -250,13 +262,13 @@ if(CLR_CMAKE_TARGET_WIN32)
 endif(CLR_CMAKE_TARGET_WIN32)
 
 # add the install targets
-if(NOT CLR_CMAKE_HOST_ARCH_WASM)
+if(NOT CLR_CMAKE_HOST_ARCH_WASM AND NOT CLR_CMAKE_TARGET_HORIZ)
     install_clr(TARGETS coreclr DESTINATIONS . sharedFramework COMPONENT runtime)
-endif(NOT CLR_CMAKE_HOST_ARCH_WASM)
 
-if(CLR_CMAKE_HOST_MACCATALYST OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS OR CLR_CMAKE_HOST_ANDROID OR CLR_CMAKE_HOST_ARCH_WASM)
+    # Enable profile guided optimization
+    add_pgo(coreclr)
+endif()
+
+if(CLR_CMAKE_HOST_MACCATALYST OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS OR CLR_CMAKE_HOST_ANDROID OR CLR_CMAKE_HOST_ARCH_WASM OR CLR_CMAKE_TARGET_HORIZ)
     install_clr(TARGETS coreclr_static DESTINATIONS . sharedFramework COMPONENT runtime)
-endif(CLR_CMAKE_HOST_MACCATALYST OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS OR CLR_CMAKE_HOST_ANDROID OR CLR_CMAKE_HOST_ARCH_WASM)
-
-# Enable profile guided optimization
-add_pgo(coreclr)
+endif()
