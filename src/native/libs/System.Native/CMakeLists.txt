@@ -44,6 +44,7 @@ elseif (CLR_CMAKE_TARGET_HORIZ)
         pal_threading.c
         pal_uid_wasi.c
     )
+    list (APPEND NATIVE_SOURCES pal_networking_poll.c)
     if (HORIZ_DEVICE)
         list (APPEND NATIVE_SOURCES pal_signal_wasi.c)
     else ()

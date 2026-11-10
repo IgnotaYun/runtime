@@ -7,6 +7,7 @@
 
 #include "pal_config.h"
 #include "pal_networking.h"
+#include "pal_networking_poll.h"
 #include "pal_safecrt.h"
 #include "pal_utilities.h"
 #include <pal_networking_common.h>
@@ -3402,7 +3403,33 @@ static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32
     return Error_SUCCESS;
 }
 
-#else // !HAVE_KQUEUE !HAVE_EPOLL
+#elif HAVE_POLL_SOCKET_EVENT_PORT
+
+static const size_t SocketEventBufferElementSize = sizeof(SocketEvent);
+
+static int32_t CreateSocketEventPortInner(int32_t* port)
+{
+    return PollSocketEventPort_Create(port);
+}
+
+static int32_t CloseSocketEventPortInner(int32_t port)
+{
+    return PollSocketEventPort_Close(port);
+}
+
+static int32_t TryChangeSocketEventRegistrationInner(
+    int32_t port, int32_t socket, SocketEvents currentEvents, SocketEvents newEvents, uintptr_t data)
+{
+    (void)currentEvents;
+    return PollSocketEventPort_TryChangeRegistration(port, socket, newEvents, data);
+}
+
+static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32_t* count)
+{
+    return PollSocketEventPort_Wait(port, buffer, count);
+}
+
+#else // !HAVE_KQUEUE !HAVE_EPOLL !HAVE_POLL_SOCKET_EVENT_PORT
 
 static const size_t SocketEventBufferElementSize = 0;
 
@@ -3424,7 +3451,7 @@ static int32_t WaitForSocketEventsInner(int32_t port, SocketEvent* buffer, int32
 {
     return Error_ENOSYS;
 }
-#endif  // !HAVE_KQUEUE !HAVE_EPOLL
+#endif  // !HAVE_KQUEUE !HAVE_EPOLL !HAVE_POLL_SOCKET_EVENT_PORT
 
 #if defined(TARGET_WASI)
 // from https://github.com/WebAssembly/wasi-libc/blob/230d4be6c54bec93181050f9e25c87150506bdd0/libc-bottom-half/headers/private/wasi/descriptor_table.h

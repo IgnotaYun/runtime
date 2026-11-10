@@ -5,6 +5,7 @@
 #include "pal_config.h"
 #include "pal_errno.h"
 #include "pal_io.h"
+#include "pal_networking_poll.h"
 #include "pal_utilities.h"
 #include "pal_safecrt.h"
 #include "pal_types.h"
@@ -343,6 +344,9 @@ intptr_t SystemNative_Open(const char* path, int32_t flags, int32_t mode)
 
 int32_t SystemNative_Close(intptr_t fd)
 {
+#if HAVE_POLL_SOCKET_EVENT_PORT
+    PollSocketEventPort_CloseDescriptor(ToFileDescriptor(fd));
+#endif
     int result = close(ToFileDescriptor(fd));
     if (result < 0 && errno == EINTR) result = 0; // on all supported platforms, close(2) returning EINTR still means it was released
     return result;
