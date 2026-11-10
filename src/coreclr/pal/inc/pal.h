@@ -3934,6 +3934,25 @@ PALAPI
 PAL_SetGetGcMarkerExceptionCode(
     IN PGET_GCMARKER_EXCEPTION_CODE getGcMarkerExceptionCode);
 
+#ifdef HOST_HORIZ
+// Horizon delivers hardware exceptions to the application's exception entry
+// (see horiz_host.h). The check runs in Horizon's exception mode, where a fault
+// terminates the process, to decide whether the faulting IP is in managed code.
+typedef BOOL (*PHORIZ_MANAGED_FAULT_IP_CHECK)(SIZE_T ip);
+
+PALIMPORT
+VOID
+PALAPI
+PAL_HorizSetManagedFaultIpCheck(
+    IN PHORIZ_MANAGED_FAULT_IP_CHECK check);
+
+// Whether hardware exceptions reach the runtime
+PALIMPORT
+BOOL
+PALAPI
+PAL_HorizHasExceptionEntry();
+#endif // HOST_HORIZ
+
 PALIMPORT
 VOID
 PALAPI

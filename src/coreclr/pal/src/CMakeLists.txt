@@ -171,6 +171,8 @@ if(CLR_CMAKE_HOST_HORIZ)
   list(APPEND PLATFORM_SOURCES
     horiz/debug-horiz.cpp
     horiz/dlfcn-horiz.c
+    horiz/exception-horiz.cpp
+    horiz/exceptiontrampoline-horiz.S
     horiz/membarrier-horiz.cpp
     horiz/signal-horiz.cpp
   )

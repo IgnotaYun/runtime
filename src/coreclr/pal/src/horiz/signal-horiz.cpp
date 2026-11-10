@@ -3,9 +3,10 @@
 
 // Signal handling for horiz (exception/signal.cpp on other Unix systems).
 //
-// Horizon delivers no POSIX signals: hardware exceptions are not translated to
-// managed exceptions and threads cannot be interrupted by activation injection,
-// so the runtime suspends threads at GC polls only.
+// Horizon delivers no POSIX signals: hardware exceptions reach the runtime only
+// through the application's exception entry (horiz/exception-horiz.cpp), and
+// threads cannot be interrupted by activation injection, so the runtime
+// suspends threads at GC polls only.
 
 #include "pal/dbgmsg.h"
 #include "pal/palinternal.h"

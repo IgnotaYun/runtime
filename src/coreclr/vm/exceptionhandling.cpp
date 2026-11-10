@@ -149,6 +149,9 @@ MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDe
 BOOL HandleHardwareException(PAL_SEHException* ex);
 BOOL IsSafeToHandleHardwareException(PCONTEXT contextRecord, PEXCEPTION_RECORD exceptionRecord);
 #endif // TARGET_UNIX
+#ifdef HOST_HORIZ
+static BOOL IsHorizManagedFaultIp(SIZE_T ip);
+#endif // HOST_HORIZ
 
 static inline void UpdatePerformanceMetrics(CrawlFrame *pcfThisFrame, BOOL bIsRethrownException, BOOL bIsNewException)
 {
@@ -172,6 +175,12 @@ void InitializeExceptionHandling()
     // Register handler for determining whether the specified IP has code that is a GC marker for GCCover
     PAL_SetGetGcMarkerExceptionCode(GetGcMarkerExceptionCode);
 #endif // TARGET_UNIX
+
+#ifdef HOST_HORIZ
+    // Horizon reports hardware exceptions to the application, which forwards
+    // them to the PAL; this decides which of them are the runtime's
+    PAL_HorizSetManagedFaultIpCheck(IsHorizManagedFaultIp);
+#endif // HOST_HORIZ
 }
 
 struct UpdateObjectRefInResumeContextCallbackState
@@ -1341,6 +1350,28 @@ BOOL IsSafeToHandleHardwareException(PCONTEXT contextRecord, PEXCEPTION_RECORD e
         IsIPinVirtualStub(controlPc) ||  // access violation comes from DispatchStub of Interface call
         IsIPInMarkedJitHelper(controlPc));
 }
+
+#ifdef HOST_HORIZ
+// The part of IsSafeToHandleHardwareException that applies to access
+// violations. It runs while the faulting thread is in Horizon's exception mode,
+// where a fault terminates the process; like a signal handler, it only reads
+// the code ranges.
+static BOOL IsHorizManagedFaultIp(SIZE_T ip)
+{
+    PCODE controlPc = (PCODE)ip;
+
+    if (IsIPInWriteBarrierCodeCopy(controlPc))
+    {
+        // Pretend we were executing the barrier function at its original location
+        controlPc = AdjustWriteBarrierIP(controlPc);
+    }
+
+    return g_fEEStarted && (
+        (IsSafeToCallExecutionManager() && ExecutionManager::IsManagedCode(controlPc)) ||
+        IsIPinVirtualStub(controlPc) ||
+        IsIPInMarkedJitHelper(controlPc));
+}
+#endif // HOST_HORIZ
 
 #ifdef FEATURE_EMULATE_SINGLESTEP
 static inline BOOL HandleSingleStep(PCONTEXT pContext, PEXCEPTION_RECORD pExceptionRecord, Thread *pThread)

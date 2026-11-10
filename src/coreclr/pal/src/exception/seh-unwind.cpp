@@ -659,7 +659,6 @@ int g_hardware_exception_context_locvar_offset = 0;
 // where an activation signal interrupted the thread.
 int g_inject_activation_context_locvar_offset = 0;
 
-#ifndef HOST_HORIZ
 static bool UnwindSignalHandlerFrame(CONTEXT *context)
 {
     DWORD64 curPc = CONTEXTGetPC(context);
@@ -676,6 +675,7 @@ static bool UnwindSignalHandlerFrame(CONTEXT *context)
         return true;
     }
 
+#ifndef HOST_HORIZ
     // Check if the PC is the return address from the InvokeActivationHandler.
     // If that's the case, extract its local variable containing a pointer to the windows style context of the activation
     // injection location and return that. This skips the signal handler trampoline that the libunwind
@@ -687,10 +687,10 @@ static bool UnwindSignalHandlerFrame(CONTEXT *context)
 
         return true;
     }
+#endif // !HOST_HORIZ
 
     return false;
 }
-#endif // !HOST_HORIZ
 
 #ifndef TARGET_HORIZ
 BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextPointers)
@@ -815,13 +815,12 @@ static_assert(offsetof(KNONVOLATILE_CONTEXT_POINTERS, D8) == offsetof(HorizUnwin
 
 BOOL PAL_VirtualUnwind(CONTEXT *context, KNONVOLATILE_CONTEXT_POINTERS *contextPointers)
 {
-#ifndef HOST_HORIZ
-    // The horiz mirror runs on Linux, which delivers signals
+    // Hardware exceptions are dispatched by signal handlers on the mirror and
+    // by PAL_HorizDispatchException on the device
     if (UnwindSignalHandlerFrame(context))
     {
         return TRUE;
     }
-#endif // !HOST_HORIZ
 
     // The PC of a frame that caused a hardware exception is the faulting
     // instruction rather than a return address, so it is looked up as is.
