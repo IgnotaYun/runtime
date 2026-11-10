@@ -3,6 +3,17 @@ cmake_minimum_required(VERSION 3.10..3.20)
 
 project(System.Globalization.Native C)
 
+if (CLR_CMAKE_TARGET_HORIZ)
+    # The CoreCLR build, which links this library into the static runtime,
+    # passes the ICU directory as CLR_CMAKE_ICU_DIR
+    if (NOT DEFINED CMAKE_ICU_DIR AND DEFINED CLR_CMAKE_ICU_DIR)
+        set(CMAKE_ICU_DIR ${CLR_CMAKE_ICU_DIR})
+    endif()
+    if (NOT DEFINED CMAKE_ICU_DIR)
+        message(FATAL_ERROR "horiz links ICU statically: set CMAKE_ICU_DIR to an ICU build for horiz (libnx/libounce) (include/ and lib/libicu*.a)")
+    endif()
+endif()
+
 if(CLR_CMAKE_TARGET_UNIX OR CLR_CMAKE_TARGET_WASI)
     if (ANDROID_FORCE_ICU_DATA_DIR)
         add_definitions(-DANDROID_FORCE_ICU_DATA_DIR)
@@ -108,7 +119,7 @@ if (LOCAL_BUILD)
     # For minipal files
     include_directories(../../)
     include_directories(${CMAKE_CURRENT_BINARY_DIR})
-elseif (CLR_CMAKE_TARGET_MACCATALYST OR CLR_CMAKE_TARGET_IOS OR CLR_CMAKE_TARGET_TVOS OR CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI)
+elseif (CLR_CMAKE_TARGET_MACCATALYST OR CLR_CMAKE_TARGET_IOS OR CLR_CMAKE_TARGET_TVOS OR CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI OR CLR_CMAKE_TARGET_HORIZ)
     add_definitions(-DSTATIC_ICU)
     set(NATIVEGLOBALIZATION_SOURCES ${NATIVEGLOBALIZATION_SOURCES} pal_icushim_static.c)
 else()

@@ -205,9 +205,10 @@ GlobalizationNative_LoadICUData(const char* path)
 
 int32_t GlobalizationNative_LoadICU(void)
 {
-#if !defined(LOCAL_BUILD)
+#if !defined(LOCAL_BUILD) && !defined(TARGET_HORIZ)
 // Static NativeAOT compilation does not have
-// GlobalizationNative_LoadICUData() as entrypoint
+// GlobalizationNative_LoadICUData() as entrypoint.
+// horiz links the ICU data library.
     if (!isDataSet)
     {
         // don't try to locate icudt.dat automatically if mono_wasm_load_icu_data wasn't called
