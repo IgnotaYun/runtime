@@ -492,7 +492,17 @@ int minipal_getcpufeatures(void)
     if (hwCap2 & HWCAP2_SVE2)
         result |= ARM64IntrinsicConstants_Sve2;
 
-#else // !HAVE_AUXV_HWCAP_H
+#elif defined(HOST_HORIZ)
+
+    // Horizon has no way to query CPU features. The Switch's Cortex-A57 is
+    // ARMv8.0 with the cryptography and CRC32 extensions, which is also what
+    // devkitPro compiles for (-march=armv8-a+crc+crypto).
+    result |= ARM64IntrinsicConstants_Aes;
+    result |= ARM64IntrinsicConstants_Crc32;
+    result |= ARM64IntrinsicConstants_Sha1;
+    result |= ARM64IntrinsicConstants_Sha256;
+
+#else // !HAVE_AUXV_HWCAP_H && !HOST_HORIZ
 
 #if HAVE_SYSCTLBYNAME
     int64_t valueFromSysctl = 0;

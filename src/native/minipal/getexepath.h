@@ -20,6 +20,8 @@
 #elif defined(__HAIKU__)
 #include <FindDirectory.h>
 #include <StorageDefs.h>
+#elif defined(HOST_HORIZ)
+#include <string.h>
 #elif HAVE_GETAUXVAL
 #include <sys/auxv.h>
 #endif
@@ -83,6 +85,18 @@ static inline char* minipal_getexepath(void)
     }
 
     return strdup(path);
+#elif defined(HOST_HORIZ)
+    // libnx/libounce receives the path of the application image (e.g. "sdmc:/switch/app.nro")
+    // from the homebrew loader as argv[0]. Emulators that load the image
+    // directly pass no arguments; report a placeholder then, like TARGET_WASM.
+    extern int __system_argc;
+    extern char** __system_argv;
+    if (__system_argc < 1 || __system_argv[0] == NULL || __system_argv[0][0] == '\0')
+    {
+        return strdup("/application.nro");
+    }
+
+    return strdup(__system_argv[0]);
 #elif defined(TARGET_WASM)
     // This is a packaging convention that our tooling should enforce.
     return strdup("/managed");

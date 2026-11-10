@@ -20,6 +20,10 @@
 #if defined(__APPLE__) && __APPLE__
 #include <CommonCrypto/CommonRandom.h>
 #endif
+#if defined(HOST_HORIZ)
+#include <switch/result.h>
+#include <switch/services/csrng.h>
+#endif
 
 #include "random.h"
 
@@ -98,6 +102,18 @@ int32_t minipal_get_cryptographically_secure_random_bytes(uint8_t* buffer, int32
 #elif HAVE_BCRYPT_H
     NTSTATUS status = BCryptGenRandom(NULL, buffer, (ULONG)bufferLength, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     return BCRYPT_SUCCESS(status) ? 0 : -1;
+#elif defined(HOST_HORIZ)
+    // The session to the csrng service stays open for the lifetime of the
+    // process. A racing first call only increments the service reference count.
+    static volatile bool sCsrngInitialized;
+    if (!sCsrngInitialized)
+    {
+        if (R_FAILED(csrngInitialize()))
+            return -1;
+        sCsrngInitialized = true;
+    }
+
+    return R_SUCCEEDED(csrngGetRandomBytes(buffer, (size_t)bufferLength)) ? 0 : -1;
 #else
 
     static volatile int rand_des = -1;

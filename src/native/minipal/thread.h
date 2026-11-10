@@ -62,7 +62,7 @@ static inline size_t minipal_get_current_thread_id_no_cache(void)
     tid = (size_t)_lwp_self();
 #elif defined(__HAIKU__)
     tid = (size_t)find_thread(NULL);
-#elif defined(__sun)
+#elif defined(__sun) || defined(HOST_HORIZ)
     tid = (size_t)pthread_self();
 #elif defined(__wasm)
     tid = (size_t)(void*)pthread_self();
@@ -113,6 +113,11 @@ static inline int minipal_set_thread_name(pthread_t thread, const char* name)
 {
 #ifdef __wasm
     // WASM does not support pthread_setname_np yet: https://github.com/emscripten-core/emscripten/pull/18751
+    return 0;
+#elif defined(HOST_HORIZ)
+    // libnx/libounce does not implement pthread_setname_np
+    (void)thread;
+    (void)name;
     return 0;
 #else
     const char* threadName = name;
