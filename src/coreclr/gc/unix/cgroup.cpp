@@ -24,7 +24,7 @@ Abstract:
 #if defined(__APPLE__) || defined(__FreeBSD__)
 #include <sys/param.h>
 #include <sys/mount.h>
-#elif !defined(__HAIKU__)
+#elif !defined(__HAIKU__) && !defined(HOST_HORIZ)
 #include <sys/vfs.h>
 #endif
 #include <errno.h>
@@ -37,6 +37,41 @@ Abstract:
 #ifndef SIZE_T_MAX
 #define SIZE_T_MAX (~(size_t)0)
 #endif
+
+#ifdef HOST_HORIZ
+
+extern "C"
+{
+#include <switch/result.h>
+#include <switch/kernel/svc.h>
+}
+
+// Horizon has no control groups
+
+void InitializeCGroup()
+{
+}
+
+void CleanupCGroup()
+{
+}
+
+size_t GetRestrictedPhysicalMemoryLimit()
+{
+    return 0;
+}
+
+bool GetPhysicalMemoryUsed(size_t* val)
+{
+    uint64_t used;
+    if (val == nullptr || R_FAILED(svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0)))
+        return false;
+
+    *val = (size_t)used;
+    return true;
+}
+
+#else // HOST_HORIZ
 
 #define CGROUP2_SUPER_MAGIC 0x63677270
 
@@ -659,3 +694,5 @@ bool GetPhysicalMemoryUsed(size_t* val)
     free(line);
     return result;
 }
+
+#endif // HOST_HORIZ

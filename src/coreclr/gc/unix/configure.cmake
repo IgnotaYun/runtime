@@ -115,6 +115,10 @@ check_cxx_symbol_exists(swapctl sys/swap.h HAVE_SWAPCTL)
 if(CLR_CMAKE_TARGET_LINUX)
   # sysctl is deprecated on Linux
   set(HAVE_SYSCTL 0)
+elseif(CLR_CMAKE_TARGET_HORIZ)
+  # libnx/libounce's sysctl is a call to the BSD socket service
+  set(HAVE_SYSCTL 0)
+  set(HAVE_SYSCTLBYNAME 0)
 else()
   check_function_exists(sysctl HAVE_SYSCTL)
 endif()

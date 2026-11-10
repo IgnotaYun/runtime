@@ -31,6 +31,18 @@
 #include <sys/swap.h>
 #endif
 
+#ifdef TARGET_HORIZ
+#include "horiz_host.h"
+#endif
+
+#ifdef HOST_HORIZ
+extern "C"
+{
+#include <switch/result.h>
+#include <switch/kernel/svc.h>
+}
+#endif
+
 #ifdef __linux__
 #include <linux/membarrier.h>
 #include <sys/syscall.h>
@@ -122,7 +134,7 @@ typedef cpuset_t cpu_set_t;
 #include "globals.h"
 #include "cgroup.h"
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(HOST_HORIZ)
 #if HAVE_SYSCONF && HAVE__SC_AVPHYS_PAGES
 #define SYSCONF_PAGES _SC_AVPHYS_PAGES
 #elif HAVE_SYSCONF && HAVE__SC_PHYS_PAGES
@@ -130,7 +142,7 @@ typedef cpuset_t cpu_set_t;
 #else
 #error Dont know how to get page-size on this architecture!
 #endif
-#endif // __APPLE__
+#endif // !__APPLE__ && !HOST_HORIZ
 
 #if defined(HOST_ARM) || defined(HOST_ARM64) || defined(HOST_LOONGARCH64) || defined(HOST_RISCV64)
 #define SYSCONF_GET_NUMPROCS _SC_NPROCESSORS_CONF
@@ -245,7 +257,7 @@ bool GCToOSInterface::Initialize()
     {
         s_flushUsingMemBarrier = TRUE;
     }
-#ifndef TARGET_APPLE
+#if !defined(TARGET_APPLE) && !defined(TARGET_HORIZ) // horiz: mprotect has no effect on the memory of the PAL's mmap
     else
     {
         assert(g_helperPage == 0);
@@ -277,7 +289,7 @@ bool GCToOSInterface::Initialize()
             return false;
         }
     }
-#endif // !TARGET_APPLE
+#endif // !TARGET_APPLE && !TARGET_HORIZ
 #endif // !TARGET_WASM
 
     InitializeCGroup();
@@ -371,6 +383,15 @@ bool GCToOSInterface::Initialize()
     {
         return false;
     }
+#elif defined(HOST_HORIZ)
+    // The memory the system grants to the application
+    u64 totalMemorySize;
+    if (R_FAILED(svcGetInfo(&totalMemorySize, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0)))
+    {
+        return false;
+    }
+
+    g_totalPhysicalMemSize = totalMemorySize;
 #else // HAVE_SYSCTL
 #error "Don't know how to get total physical memory on this platform"
 #endif // HAVE_SYSCTL
@@ -383,12 +404,14 @@ bool GCToOSInterface::Initialize()
 // Shutdown the interface implementation
 void GCToOSInterface::Shutdown()
 {
+#ifndef TARGET_HORIZ
     int ret = munlock(g_helperPage, OS_PAGE_SIZE);
     assert(ret == 0);
     ret = pthread_mutex_destroy(&g_flushProcessWriteBuffersMutex);
     assert(ret == 0);
 
     munmap(g_helperPage, OS_PAGE_SIZE);
+#endif // !TARGET_HORIZ
 
     CleanupCGroup();
 }
@@ -819,6 +842,7 @@ bool GCToOSInterface::GetWriteWatch(bool resetState, void* address, size_t size,
     return false;
 }
 
+#ifndef HOST_HORIZ // Horizon has no procfs, sysfs or control groups (and newlib no getline)
 bool ReadMemoryValueFromFile(const char* filename, uint64_t* val)
 {
     bool result = false;
@@ -866,6 +890,7 @@ done:
     free(line);
     return result;
 }
+#endif // !HOST_HORIZ
 
 static void GetLogicalProcessorCacheSizeFromSysConf(size_t* cacheLevel, size_t* cacheSize)
 {
@@ -1035,7 +1060,7 @@ static uint64_t GetMemorySizeMultiplier(char units)
     return 1;
 }
 
-#if !defined(__APPLE__) && !defined(__HAIKU__)
+#if !defined(__APPLE__) && !defined(__HAIKU__) && !defined(HOST_HORIZ)
 // Try to read the MemAvailable entry from /proc/meminfo.
 // Return true if the /proc/meminfo existed, the entry was present and we were able to parse it.
 static bool ReadMemAvailable(uint64_t* memAvailable)
@@ -1068,7 +1093,7 @@ static bool ReadMemAvailable(uint64_t* memAvailable)
 
     return foundMemAvailable;
 }
-#endif // !defined(__APPLE__) && !defined(__HAIKU__)
+#endif // !defined(__APPLE__) && !defined(__HAIKU__) && !defined(HOST_HORIZ)
 
 // Get size of the largest cache on the processor die
 // Parameters:
@@ -1216,6 +1241,10 @@ static size_t GetCurrentVirtualMemorySize()
 //  non zero if it has succeeded, GetVirtualMemoryMaxAddress() if not available
 size_t GCToOSInterface::GetVirtualMemoryLimit()
 {
+#ifdef TARGET_HORIZ
+    // mmap hands out memory from the range the application reserved for it
+    return horiz_fakemmap_size();
+#else
     rlimit addressSpaceLimit;
     if ((getrlimit(RLIMIT_AS, &addressSpaceLimit) == 0) && (addressSpaceLimit.rlim_cur != RLIM_INFINITY))
     {
@@ -1224,6 +1253,7 @@ size_t GCToOSInterface::GetVirtualMemoryLimit()
 
     // No virtual memory limit
     return GetVirtualMemoryMaxAddress();
+#endif // TARGET_HORIZ
 }
 
 // Return the maximum address of the of the virtual address space of this process.
@@ -1307,6 +1337,12 @@ uint64_t GetAvailablePhysicalMemory()
     if (get_system_info(&info) == B_OK)
     {
         available = info.free_memory;
+    }
+#elif defined(HOST_HORIZ)
+    uint64_t used;
+    if (R_SUCCEEDED(svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0)) && used < g_totalPhysicalMemSize)
+    {
+        available = g_totalPhysicalMemSize - used;
     }
 #else // Linux
     static volatile bool tryReadMemInfo = true;
