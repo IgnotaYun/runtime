@@ -171,6 +171,8 @@ if(TIZEN)
 elseif(HORIZ)
   include_directories(SYSTEM ${CROSS_ROOTFS}/libnx/include)
   include_directories(SYSTEM ${CROSS_ROOTFS}/portlibs/switch/include)
+  # src/native/horiz/include has the POSIX headers that newlib lacks (dlfcn.h, sys/mman.h, ...)
+  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/../../../src/native/horiz/include)
 endif()
 
 function(locate_toolchain_exec exec var)
