@@ -211,6 +211,10 @@
 
 #include "genanalysis.h"
 
+#ifdef TARGET_HORIZ
+#include "horiz_diag.h"
+#endif
+
 static int GetThreadUICultureId(_Out_ LocaleIDValue* pLocale);  // TODO: This shouldn't use the LCID.  We should rely on name instead
 
 static HRESULT GetThreadUICultureNames(__inout StringArrayList* pCultureNames);
@@ -638,6 +642,9 @@ void EEStartupHelper()
         SString::Startup();
 
         IfFailGo(EEConfig::Setup());
+#ifdef TARGET_HORIZ
+        HORIZ_DIAG("startup: configuration read");
+#endif
 
         g_EnableFastHeapDumps = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_EnableFastHeapDumps);
 #ifdef HOST_WINDOWS
@@ -983,6 +990,9 @@ void EEStartupHelper()
         Assembly::Initialize();
 
         SystemDomain::System()->Init();
+#ifdef TARGET_HORIZ
+        HORIZ_DIAG("startup: CoreLib loaded");
+#endif
 
 #ifdef PROFILING_SUPPORTED
         // <TODO>This is to compensate for the DefaultDomain workaround contained in
@@ -1016,6 +1026,9 @@ void EEStartupHelper()
 
         g_fEEStarted = TRUE;
         g_EEStartupStatus = S_OK;
+#ifdef TARGET_HORIZ
+        HORIZ_DIAG("startup: runtime started");
+#endif
         hr = S_OK;
         STRESS_LOG0(LF_STARTUP, LL_ALWAYS, "===================EEStartup Completed===================");
 

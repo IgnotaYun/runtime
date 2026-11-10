@@ -23,6 +23,10 @@
 #include <hostinformation.h>
 #include <corehost/host_runtime_contract.h>
 
+#ifdef TARGET_HORIZ
+#include "horiz_diag.h"
+#endif
+
 #define ASSERTE_ALL_BUILDS(expr) _ASSERTE_ALL_BUILDS((expr))
 
 #ifdef TARGET_UNIX
@@ -246,6 +250,10 @@ int coreclr_initialize(
     BundleProbeFn* bundleProbe = nullptr;
     PInvokeOverrideFn* pinvokeOverride = nullptr;
     host_runtime_contract* hostContract = nullptr;
+
+#ifdef TARGET_HORIZ
+    HORIZ_DIAG("startup: coreclr_initialize");
+#endif
 
 #ifdef TARGET_UNIX
     HostingApiFrameHolder apiFrameHolder(_ReturnAddress());
@@ -488,7 +496,14 @@ int coreclr_execute_assembly(
 
     ConstWStringHolder managedAssemblyPathW = StringToUnicode(managedAssemblyPath);
 
+#ifdef TARGET_HORIZ
+    HORIZ_DIAG("startup: executing %s", managedAssemblyPath);
+#endif
+
     HRESULT hr = host->ExecuteAssembly(domainId, managedAssemblyPathW, argc, argvW, (DWORD *)exitCode);
+#ifdef TARGET_HORIZ
+    HORIZ_DIAG("exit: hr 0x%x, exit code %u", (unsigned)hr, *exitCode);
+#endif
     IfFailRet(hr);
 
     return hr;

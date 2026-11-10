@@ -54,6 +54,9 @@ SET_DEFAULT_DEBUG_CHANNEL(EXCEPT); // some headers have code with asserts, so do
 
 #endif // !HAVE_MACH_EXCEPTIONS
 #include "pal/context.h"
+#ifdef TARGET_HORIZ_MIRROR
+#include "horiz_diag.h"
+#endif
 
 #ifdef SIGRTMIN
 #define INJECT_ACTIVATION_SIGNAL SIGRTMIN
@@ -251,6 +254,12 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
             g_stackOverflowHandlerStack = (void*)((size_t)g_stackOverflowHandlerStack + stackOverflowStackSize);
 #endif // HAVE_MACH_EXCEPTIONS
         }
+#if defined(TARGET_HORIZ_MIRROR) && defined(HORIZ_DIAGNOSTICS)
+        else
+        {
+            horiz_diag_install_fault_logger();
+        }
+#endif
 
         // We don't setup a handler for SIGINT/SIGQUIT when those signals are ignored.
         // Otherwise our child processes would reset to the default on exec causing them

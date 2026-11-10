@@ -166,6 +166,11 @@ void PAL_HorizRegisterExceptionEntry(void);
 void* horiz_host_dlopen(const char* name);
 void* horiz_host_dlsym(void* handle, const char* symbol);
 
+// Output of the bring-up diagnostics (CLR_CMAKE_HORIZ_DIAGNOSTICS, see
+// horiz_diag.h). The default writes to svcOutputDebugString, or to stderr on
+// the mirror.
+void horiz_host_diag_write(const char* message, size_t length);
+
 // Called when the runtime terminates the process (Environment.Exit and
 // unhandled exceptions) so that the application can shut down the services
 // it started. Does not return.

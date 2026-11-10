@@ -155,6 +155,9 @@ if(CLR_CMAKE_TARGET_HORIZ)
     horiz/mmap-horiz.c
     horiz/unwind-horiz.cpp
   )
+  if(CLR_CMAKE_HORIZ_DIAGNOSTICS)
+    list(APPEND PLATFORM_SOURCES horiz/diag-horiz.c)
+  endif()
 endif(CLR_CMAKE_TARGET_HORIZ)
 
 if(CLR_CMAKE_TARGET_HORIZ_MIRROR)

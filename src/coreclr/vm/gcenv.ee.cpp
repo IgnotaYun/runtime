@@ -35,6 +35,11 @@ extern bool g_gcHeapHardLimitInfoSpecified;
 #include <generatedumpflags.h>
 #include "gcrefmap.h"
 
+#ifdef TARGET_HORIZ
+#include "horiz_host.h"
+#include "horiz_diag.h"
+#endif
+
 void GCToEEInterface::SuspendEE(SUSPEND_REASON reason)
 {
     WRAPPER_NO_CONTRACT;
@@ -43,6 +48,10 @@ void GCToEEInterface::SuspendEE(SUSPEND_REASON reason)
     static_assert_no_msg(SUSPEND_FOR_GC_PREP == (int)ThreadSuspend::SUSPEND_FOR_GC_PREP);
 
     _ASSERTE(reason == SUSPEND_FOR_GC || reason == SUSPEND_FOR_GC_PREP);
+
+#ifdef TARGET_HORIZ
+    HORIZ_DIAG("gc: suspending");
+#endif
 
     if (g_pDebugInterface != NULL)
         g_pDebugInterface->SuspendForGarbageCollectionStarted();
@@ -61,6 +70,10 @@ void GCToEEInterface::RestartEE(bool bFinishedGC)
         g_pDebugInterface->ResumeForGarbageCollectionStarted();
 
     ThreadSuspend::RestartEE(bFinishedGC, TRUE);
+
+#ifdef TARGET_HORIZ
+    HORIZ_DIAG("gc: restarted");
+#endif
 }
 
 VOID GCToEEInterface::SyncBlockCacheWeakPtrScan(HANDLESCANPROC scanProc, uintptr_t lp1, uintptr_t lp2)
@@ -342,6 +355,10 @@ void GCToEEInterface::GcStartWork (int condemned, int max_gen)
     }
     CONTRACTL_END;
 
+#ifdef TARGET_HORIZ
+    HORIZ_DIAG("gc: gen%d start", condemned);
+#endif
+
 #ifdef VERIFY_HEAP
     // Validate byrefs pinned by IL stubs since the last GC.
     StubHelpers::ProcessByrefValidationList();
@@ -371,6 +388,10 @@ void GCToEEInterface::GcDone(int condemned)
     CONTRACTL_END;
 
     Interop::OnGCFinished(condemned);
+
+#ifdef TARGET_HORIZ
+    HORIZ_DIAG("gc: gen%d done, mmap range %zu of %zu MB used", condemned, horiz_fakemmap_used() >> 20, horiz_fakemmap_size() >> 20);
+#endif
 }
 
 bool GCToEEInterface::RefCountedHandleCallbacks(Object * pObject)

@@ -16,6 +16,7 @@
 #include <codeslab/codeslab.h>
 #include "minipal.h"
 #include "horiz_host.h"
+#include "horiz_diag.h"
 
 namespace
 {
@@ -24,6 +25,17 @@ namespace
 
     using DoubleMapper = codeslab_span;
     DoubleMapper* g_mapper;
+
+#ifdef HORIZ_DIAGNOSTICS
+    size_t g_highWater;
+    size_t g_nextHighWaterReport;
+
+    void MapperDiagLog(const char* line, void* user)
+    {
+        (void)user;
+        HORIZ_DIAG("%s", line);
+    }
+#endif
 
     size_t GetReserveSize()
     {
@@ -84,6 +96,9 @@ bool VMToOSInterface::CreateDoubleMemoryMapper(void** pHandle, size_t* pMaxExecu
     cfg.name = "code arena";
     cfg.reserve_size = GetReserveSize();
     cfg.chunk_size = ChunkSize;
+#ifdef HORIZ_DIAGNOSTICS
+    cfg.log_fn = MapperDiagLog;
+#endif
 
     DoubleMapper* mapper = codeslab_span_create(&cfg);
     if (mapper == nullptr)
@@ -121,6 +136,18 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void* mapperHandle, size_t offs
     void* result = rx + offset;
     if (!IsInRange(result, size, rangeStart, rangeEnd))
         return nullptr;
+
+#ifdef HORIZ_DIAGNOSTICS
+    if (offset + size > g_highWater)
+    {
+        g_highWater = offset + size;
+        if (g_highWater >= g_nextHighWaterReport)
+        {
+            g_nextHighWaterReport = (g_highWater & ~(size_t)(4 * 1024 * 1024 - 1)) + 4 * 1024 * 1024;
+            HORIZ_DIAG("code arena: high water %zu of %zu MB", g_highWater >> 20, mapperSize >> 20);
+        }
+    }
+#endif
 
     return result;
 }
