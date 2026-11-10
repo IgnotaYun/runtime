@@ -501,7 +501,8 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, TADDR secretParam, LoaderAllocat
 {
     WRAPPER_NO_CONTRACT;
 
-    StubPrecodeData *pStubData = GetData();
+    StubDataWriterHolder<StubPrecodeData> stubDataWriter(GetData());
+    StubPrecodeData *pStubData = stubDataWriter.GetRW();
 
     if (pLoaderAllocator != NULL)
     {
@@ -638,7 +639,8 @@ BOOL StubPrecode::IsStubPrecodeByASM(PCODE addr)
 void InterpreterPrecode::Init(InterpreterPrecode* pPrecodeRX, TADDR byteCodeAddr)
 {
     WRAPPER_NO_CONTRACT;
-    InterpreterPrecodeData *pStubData = GetData();
+    StubDataWriterHolder<InterpreterPrecodeData> stubDataWriter(GetData());
+    InterpreterPrecodeData *pStubData = stubDataWriter.GetRW();
 
     pStubData->Target = (PCODE)InterpreterStub;
     pStubData->ByteCodeAddr = byteCodeAddr;
@@ -663,7 +665,8 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 
     _ASSERTE(pPrecodeRX == this);
 
-    FixupPrecodeData *pData = GetData();
+    StubDataWriterHolder<FixupPrecodeData> dataWriter(GetData());
+    FixupPrecodeData *pData = dataWriter.GetRW();
     pData->MethodDesc = pMD;
 
     _ASSERTE(GetMethodDesc() == (TADDR)pMD);

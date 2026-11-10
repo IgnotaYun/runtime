@@ -96,7 +96,7 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
         if (fReleaseMemory)
         {
-            ExecutableAllocator::Instance()->Release(pVirtualAddress);
+            ReleaseReservedMemory((BYTE*)pVirtualAddress);
         }
 
         delete pSearch;
@@ -104,7 +104,7 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
     if (m_reservedBlock.m_fReleaseMemory)
     {
-        ExecutableAllocator::Instance()->Release(m_reservedBlock.pVirtualAddress);
+        ReleaseReservedMemory((BYTE*)m_reservedBlock.pVirtualAddress);
     }
 }
 
@@ -147,8 +147,7 @@ size_t UnlockedLoaderHeap::GetBytesAvailReservedRegion()
 BOOL UnlockedLoaderHeap::CommitPages(void* pData, size_t dwSizeToCommitPart)
 {
     // Commit first set of pages, since it will contain the LoaderHeapBlock
-    void *pTemp = ExecutableAllocator::Instance()->Commit(pData, dwSizeToCommitPart, IsExecutable());
-    if (pTemp == NULL)
+    if (!CommitLoaderHeapMemory(pData, dwSizeToCommitPart, IsExecutable()))
     {
         return FALSE;
     }
@@ -211,7 +210,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
         // Reserve the memory for even non-executable stuff close to the executable code, as it has profound effect
         // on e.g. a static variable access performance.
-        pData = (BYTE *)ExecutableAllocator::Instance()->Reserve(dwSizeToReserve);
+        pData = ReserveLoaderHeapMemory(dwSizeToReserve, IsExecutable());
         if (pData == NULL)
         {
             _ASSERTE(!"Unable to reserve memory range for a loaderheap");

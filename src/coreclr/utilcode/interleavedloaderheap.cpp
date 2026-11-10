@@ -114,7 +114,8 @@ BOOL UnlockedInterleavedLoaderHeap::CommitPages(void* pData, size_t dwSizeToComm
         // the executable pages cannot speculate into the data page at any time before they are initialized.
         if (m_pConfig->DataPageGenerator != NULL)
         {
-            m_pConfig->DataPageGenerator((uint8_t*)pTemp, dwSizeToCommitPart);
+            StubDataWriterHolder<uint8_t> dataPageWriter((uint8_t*)pTemp, dwSizeToCommitPart);
+            m_pConfig->DataPageGenerator(dataPageWriter.GetRW(), dwSizeToCommitPart);
         }
     }
 
@@ -416,7 +417,9 @@ void UnlockedInterleavedLoaderHeap::UnlockedBackoutStub(void *pMem
     size_t dwSize = m_dwGranularity;
 
     // Clear the RW page
-    memset((BYTE*)pMem + GetStubCodePageSize(), 0x00, dwSize); // Fill freed region with 0
+    BYTE* pData = (BYTE*)pMem + GetStubCodePageSize();
+    StubDataWriterHolder<BYTE> dataWriter(pData, dwSize);
+    memset(dataWriter.GetRW(), 0x00, dwSize); // Fill freed region with 0
 
     if (m_pAllocPtr == ( ((BYTE*)pMem) + dwSize ))
     {
@@ -424,9 +427,9 @@ void UnlockedInterleavedLoaderHeap::UnlockedBackoutStub(void *pMem
     }
     else
     {
-        InterleavedStubFreeListNode* newFreeNode = (InterleavedStubFreeListNode*)((BYTE*)pMem + GetStubCodePageSize());
+        InterleavedStubFreeListNode* newFreeNode = (InterleavedStubFreeListNode*)dataWriter.GetRW();
         newFreeNode->m_pNext = m_pFreeListHead;
-        m_pFreeListHead = newFreeNode;
+        m_pFreeListHead = (InterleavedStubFreeListNode*)pData;
     }
 }
 
@@ -477,7 +480,7 @@ void *UnlockedInterleavedLoaderHeap::UnlockedAllocStub_NoThrow(
         // We have a free stub - use it
         InterleavedStubFreeListNode* pFreeStubData = m_pFreeListHead;
         m_pFreeListHead = pFreeStubData->m_pNext;
-        pFreeStubData->m_pNext = NULL;
+        StubDataWriterHolder<InterleavedStubFreeListNode>(pFreeStubData).GetRW()->m_pNext = NULL;
         pResult = ((BYTE*)pFreeStubData) - GetStubCodePageSize();
     }
     else

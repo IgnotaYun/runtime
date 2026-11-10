@@ -589,6 +589,25 @@ void VirtualCallStubManager::Init(LoaderAllocator *pLoaderAllocator)
 
     BYTE * initReservedMem = NULL;
 
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+    // The heaps hold data only, which the executable allocator cannot provide.
+    // Reserve their memory here for collectible loader allocators too: those do
+    // not reserve a VSD block with FEATURE_SEPARATE_DATA_RESERVATIONS.
+    {
+        DWORD dwTotalReserveMemSize = indcell_heap_reserve_size
+#ifdef FEATURE_VIRTUAL_STUB_DISPATCH
+                                      + cache_entry_heap_reserve_size
+#endif // FEATURE_VIRTUAL_STUB_DISPATCH
+                                      ;
+
+        initReservedMem = (BYTE*)ClrVirtualAlloc(NULL, dwTotalReserveMemSize, MEM_RESERVE, PAGE_NOACCESS);
+
+        m_initialReservedMemForHeaps = initReservedMem;
+
+        if (initReservedMem == NULL)
+            COMPlusThrowOM();
+    }
+#else // FEATURE_SEPARATE_DATA_RESERVATIONS
     if (!m_loaderAllocator->IsCollectible())
     {
         DWORD dwTotalReserveMemSizeCalc  = indcell_heap_reserve_size
@@ -665,6 +684,7 @@ void VirtualCallStubManager::Init(LoaderAllocator *pLoaderAllocator)
         if (initReservedMem == NULL)
             COMPlusThrowOM();
     }
+#endif // FEATURE_SEPARATE_DATA_RESERVATIONS
 
     // Hot  memory, Writable, No-Execute, infrequent writes
     RangeList* pIndCellRangeList = NULL;
@@ -823,9 +843,14 @@ VirtualCallStubManager::~VirtualCallStubManager()
     }
 
     // This was the block reserved by Init for the heaps.
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+    if (m_initialReservedMemForHeaps)
+        ClrVirtualFree (m_initialReservedMemForHeaps, 0, MEM_RELEASE);
+#else
     // For the collectible case, the VSD logic does not allocate the memory.
     if (m_initialReservedMemForHeaps && !m_loaderAllocator->IsCollectible())
         ClrVirtualFree (m_initialReservedMemForHeaps, 0, MEM_RELEASE);
+#endif
 
     // Free critical section
     m_indCellLock.Destroy();

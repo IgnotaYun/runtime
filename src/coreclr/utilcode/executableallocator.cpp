@@ -5,6 +5,10 @@
 #include "executableallocator.h"
 #include <configuration.h>
 
+#ifdef TARGET_HORIZ
+#include "horiz_host.h"
+#endif
+
 #if USE_LAZY_PREFERRED_RANGE
 // Preferred region to allocate the code in.
 BYTE * ExecutableAllocator::g_lazyPreferredRangeStart;
@@ -229,6 +233,25 @@ ExecutableAllocator* ExecutableAllocator::Instance()
     return g_instance;
 }
 
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+bool ExecutableAllocator::Owns(void* pRX)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    if (!IsDoubleMappingEnabled() || pRX == NULL)
+        return false;
+
+    CRITSEC_Holder csh(m_CriticalSection);
+    for (BlockRX* block = m_pFirstBlockRX; block != NULL; block = block->next)
+    {
+        if (pRX >= block->baseRX && pRX < (BYTE*)block->baseRX + block->size)
+            return true;
+    }
+
+    return false;
+}
+#endif // FEATURE_SEPARATE_DATA_RESERVATIONS
+
 ExecutableAllocator::~ExecutableAllocator()
 {
     if (IsDoubleMappingEnabled())
@@ -261,7 +284,12 @@ HRESULT ExecutableAllocator::StaticInitialize(FatalErrorHandler fatalErrorHandle
 #endif
 
     g_fatalErrorHandler = fatalErrorHandler;
+#ifdef TARGET_HORIZ
+    // Horizon does not allow memory that is writable and executable at once
+    g_isWXorXEnabled = true;
+#else
     g_isWXorXEnabled = Configuration::GetKnobBooleanValue(W("System.Runtime.EnableWriteXorExecute"), CLRConfig::EXTERNAL_EnableWriteXorExecute);
+#endif
     g_instance = new (nothrow) ExecutableAllocator();
     if (g_instance == NULL)
     {
@@ -287,8 +315,13 @@ bool ExecutableAllocator::Initialize()
     {
         if (!VMToOSInterface::CreateDoubleMemoryMapper(&m_doubleMemoryMapperHandle, &m_maxExecutableCodeSize))
         {
+#ifdef TARGET_HORIZ
+            // There is no RWX fallback on Horizon
+            return false;
+#else
             g_isWXorXEnabled = false;
             return true;
+#endif
         }
 
         m_CriticalSection = ClrCreateCriticalSection(CrstExecutableAllocatorLock,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
@@ -868,6 +901,20 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size, CacheableMapping cacheM
         return pRX;
     }
 
+#ifdef TARGET_HORIZ
+    // The horiz double mapper keeps a single RW alias of its whole arena for the
+    // lifetime of the process, so there is nothing to map, cache or unmap.
+    (void)cacheMapping;
+    void* pRW = NULL;
+    size_t available = 0;
+    if (!minipal_horiz_get_write_alias(pRX, &pRW, &available) || available < size)
+    {
+        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RX block to map as RW was not found"));
+    }
+
+    return pRW;
+#endif // TARGET_HORIZ
+
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
     StopWatch swAll(&g_mapTimeWithLockSum);
 #endif
@@ -956,6 +1003,11 @@ void ExecutableAllocator::UnmapRW(void* pRW)
     {
         return;
     }
+
+#ifdef TARGET_HORIZ
+    // MapRW does not create mappings on horiz
+    return;
+#endif // TARGET_HORIZ
 
     CRITSEC_Holder csh(m_CriticalSection);
     _ASSERTE(pRW != NULL);

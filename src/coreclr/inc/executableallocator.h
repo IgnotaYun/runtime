@@ -213,6 +213,11 @@ public:
     // Return the ExecuteAllocator singleton instance
     static ExecutableAllocator* Instance();
 
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+    // Return true if the address lies in memory reserved by this allocator.
+    bool Owns(void* pRX);
+#endif
+
     // Initialize the static members of the Executable allocator and allocate
     // and initialize the instance of it.
     static HRESULT StaticInitialize(FatalErrorHandler fatalErrorHandler);
@@ -373,5 +378,39 @@ public:
 #else
 #define ExecutableWriterHolder ExecutableWriterHolderNoLog
 #endif
+
+// Write access to the data of an interleaved stub (precodes, call counting stubs).
+// The data pages are normally mapped read-write at their address. With
+// FEATURE_SEPARATE_DATA_RESERVATIONS, everything committed by the executable
+// allocator is mapped read-execute, so the data is written through its RW alias.
+template<typename T>
+class StubDataWriterHolder
+{
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+    ExecutableWriterHolderNoLog<T> m_writer;
+public:
+    StubDataWriterHolder(T* data, size_t size = sizeof(T))
+        : m_writer(data, size, ExecutableAllocator::DoNotAddToCache)
+    {
+    }
+
+    T* GetRW() const
+    {
+        return m_writer.GetRW();
+    }
+#else
+    T* m_data;
+public:
+    StubDataWriterHolder(T* data, size_t size = sizeof(T))
+        : m_data(data)
+    {
+    }
+
+    T* GetRW() const
+    {
+        return m_data;
+    }
+#endif
+};
 
 #endif // !DACCESS_COMPILE

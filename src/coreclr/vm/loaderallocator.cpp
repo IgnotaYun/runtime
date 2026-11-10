@@ -1158,6 +1158,50 @@ void LoaderAllocator::Init(BYTE *pExecutableHeapMemory)
 
     dwTotalReserveMemSize = (DWORD) ALIGN_UP(dwTotalReserveMemSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
 
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+    // The shared reservation below comes from the executable allocator, which
+    // cannot hold the data heaps. Let every heap reserve its own memory instead.
+    _ASSERTE(m_pCodeHeapInitialAlloc == NULL && m_pVSDHeapInitialAlloc == NULL);
+
+    if (dwLowFrequencyHeapReserveSize != 0)
+    {
+        _ASSERTE(!IsCollectible());
+
+        m_pLowFrequencyHeap = new (&m_LowFreqHeapInstance) LoaderHeap(LOW_FREQUENCY_HEAP_RESERVE_SIZE,
+                                                                      LOW_FREQUENCY_HEAP_COMMIT_SIZE);
+    }
+
+    if (dwExecutableHeapReserveSize != 0)
+    {
+        _ASSERTE(!IsCollectible());
+
+        m_pExecutableHeap = new (pExecutableHeapMemory) LoaderHeap(STUB_HEAP_RESERVE_SIZE,
+                                                                      STUB_HEAP_COMMIT_SIZE,
+                                                                      NULL,
+                                                                      LoaderHeapImplementationKind::Executable);
+    }
+
+    m_pHighFrequencyHeap = new (&m_HighFreqHeapInstance) LoaderHeap(HIGH_FREQUENCY_HEAP_RESERVE_SIZE,
+                                                                    HIGH_FREQUENCY_HEAP_COMMIT_SIZE);
+
+    if (IsCollectible())
+        m_pLowFrequencyHeap = m_pHighFrequencyHeap;
+
+    if (dwStaticsHeapReserveSize != 0)
+    {
+        m_pStaticsHeap = new (&m_StaticsHeapInstance) LoaderHeap(STATIC_FIELD_HEAP_RESERVE_SIZE,
+                                                                 STATIC_FIELD_HEAP_COMMIT_SIZE);
+    }
+    else
+    {
+        m_pStaticsHeap = m_pHighFrequencyHeap;
+    }
+
+    m_pStubHeap = new (&m_StubHeapInstance) LoaderHeap(STUB_HEAP_RESERVE_SIZE,
+                                                       STUB_HEAP_COMMIT_SIZE,
+                                                       STUBMANAGER_RANGELIST(StubLinkStubManager),
+                                                       LoaderHeapImplementationKind::Executable);
+#else // FEATURE_SEPARATE_DATA_RESERVATIONS
     BYTE * initReservedMem = (BYTE*)ExecutableAllocator::Instance()->Reserve(dwTotalReserveMemSize);
 
     m_InitialReservedMemForLoaderHeaps = initReservedMem;
@@ -1234,6 +1278,7 @@ void LoaderAllocator::Init(BYTE *pExecutableHeapMemory)
                                                        LoaderHeapImplementationKind::Executable);
 
     initReservedMem += dwStubHeapReserveSize;
+#endif // FEATURE_SEPARATE_DATA_RESERVATIONS
 
     m_pNewStubPrecodeHeap = new (&m_NewStubPrecodeHeapInstance) InterleavedLoaderHeap(
                                                                            &m_stubPrecodeRangeList,

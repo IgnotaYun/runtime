@@ -141,7 +141,8 @@ public:
 #ifndef DACCESS_COMPILE
     void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
     {
-        PTR_CallCountingStubData pStubData = GetData();
+        StubDataWriterHolder<CallCountingStubData> stubDataWriter(GetData());
+        CallCountingStubData* pStubData = stubDataWriter.GetRW();
         pStubData->RemainingCallCountCell = remainingCallCountCell;
         pStubData->TargetForMethod = targetForMethod;
         pStubData->TargetForThresholdReached = CallCountingStub::TargetForThresholdReached;

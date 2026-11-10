@@ -127,7 +127,7 @@ struct StubPrecode
     {
         LIMITED_METHOD_CONTRACT;
 
-        GetData()->SecretParam = secretParam;
+        StubDataWriterHolder<StubPrecodeData>(GetData()).GetRW()->SecretParam = secretParam;
     }
 #endif // DACCESS_COMPILE
 
@@ -160,8 +160,8 @@ struct StubPrecode
         }
         CONTRACTL_END;
 
-        StubPrecodeData *pData = GetData();
-        InterlockedExchangeT<PCODE>(&pData->Target, GetPreStubEntryPoint());
+        StubDataWriterHolder<StubPrecodeData> dataWriter(GetData());
+        InterlockedExchangeT<PCODE>(&dataWriter.GetRW()->Target, GetPreStubEntryPoint());
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -173,8 +173,8 @@ struct StubPrecode
         }
         CONTRACTL_END;
 
-        StubPrecodeData *pData = GetData();
-        return InterlockedCompareExchangeT<PCODE>(&pData->Target, (PCODE)target, (PCODE)expected) == expected;
+        StubDataWriterHolder<StubPrecodeData> dataWriter(GetData());
+        return InterlockedCompareExchangeT<PCODE>(&dataWriter.GetRW()->Target, (PCODE)target, (PCODE)expected) == expected;
     }
 
     void SetTargetUnconditional(TADDR target)
@@ -187,8 +187,7 @@ struct StubPrecode
         }
         CONTRACTL_END;
 
-        StubPrecodeData *pData = GetData();
-        pData->Target = (PCODE)target;
+        StubDataWriterHolder<StubPrecodeData>(GetData()).GetRW()->Target = (PCODE)target;
     }
 
     static void GenerateCodePage(uint8_t* pageBase, uint8_t* pageBaseRX, size_t size);
@@ -437,7 +436,8 @@ struct FixupPrecode
         PCODE target = (PCODE)this + FixupCodeOffset;
 
         _ASSERTE(IS_ALIGNED(&GetData()->Target, sizeof(SIZE_T)));
-        InterlockedExchangeT<PCODE>(&GetData()->Target, target);
+        StubDataWriterHolder<FixupPrecodeData> dataWriter(GetData());
+        InterlockedExchangeT<PCODE>(&dataWriter.GetRW()->Target, target);
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -461,7 +461,8 @@ struct FixupPrecode
         }
 
         _ASSERTE(IS_ALIGNED(&GetData()->Target, sizeof(SIZE_T)));
-        return InterlockedCompareExchangeT<PCODE>(&GetData()->Target, (PCODE)target, (PCODE)oldTarget) == (PCODE)oldTarget;
+        StubDataWriterHolder<FixupPrecodeData> dataWriter(GetData());
+        return InterlockedCompareExchangeT<PCODE>(&dataWriter.GetRW()->Target, (PCODE)target, (PCODE)oldTarget) == (PCODE)oldTarget;
     }
 #endif
 

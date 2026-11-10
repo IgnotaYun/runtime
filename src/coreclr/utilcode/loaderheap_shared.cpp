@@ -46,10 +46,47 @@ UnlockedLoaderHeapBase::~UnlockedLoaderHeapBase()
 }
 
 
+// Loader heaps reserve even their non-executable memory from the executable
+// allocator, close to the code, as that has a profound effect on e.g. static
+// variable access performance. With FEATURE_SEPARATE_DATA_RESERVATIONS the
+// executable allocator can only provide memory that is executable at its
+// address, so the data is reserved elsewhere.
+BYTE* ReserveLoaderHeapMemory(size_t size, bool executable)
+{
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+    if (!executable)
+    {
+        return (BYTE*)ClrVirtualAlloc(NULL, size, MEM_RESERVE, PAGE_NOACCESS);
+    }
+#endif // FEATURE_SEPARATE_DATA_RESERVATIONS
+
+    return (BYTE*)ExecutableAllocator::Instance()->Reserve(size);
+}
+
+bool CommitLoaderHeapMemory(void* address, size_t size, bool executable)
+{
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+    if (!executable)
+    {
+        return ClrVirtualAlloc(address, size, MEM_COMMIT, PAGE_READWRITE) != NULL;
+    }
+#endif // FEATURE_SEPARATE_DATA_RESERVATIONS
+
+    return ExecutableAllocator::Instance()->Commit(address, size, executable) != NULL;
+}
+
 void ReleaseReservedMemory(BYTE* value)
 {
     if (value)
     {
+#ifdef FEATURE_SEPARATE_DATA_RESERVATIONS
+        if (!ExecutableAllocator::Instance()->Owns(value))
+        {
+            ClrVirtualFree(value, 0, MEM_RELEASE);
+            return;
+        }
+#endif // FEATURE_SEPARATE_DATA_RESERVATIONS
+
         ExecutableAllocator::Instance()->Release(value);
     }
 }

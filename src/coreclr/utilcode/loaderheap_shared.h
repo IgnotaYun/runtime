@@ -4,6 +4,8 @@
 #ifndef LOADERHEAP_SHARED
 #define LOADERHEAP_SHARED
 
+BYTE* ReserveLoaderHeapMemory(size_t size, bool executable);
+bool CommitLoaderHeapMemory(void* address, size_t size, bool executable);
 void ReleaseReservedMemory(BYTE* value);
 using ReservedMemoryHolder = SpecializedWrapper<BYTE, ReleaseReservedMemory>;
 
