@@ -241,10 +241,12 @@ int32_t SystemNative_CreateThread(uintptr_t stackSize, void *(*startAddress)(voi
 
     if (stackSize > 0)
     {
+#ifdef PTHREAD_STACK_MIN
         if (stackSize < (uintptr_t)PTHREAD_STACK_MIN)
         {
             stackSize = (uintptr_t)PTHREAD_STACK_MIN;
         }
+#endif
 
         error = pthread_attr_setstacksize(&attrs, stackSize);
         if (error != 0) goto CreateThreadExit;

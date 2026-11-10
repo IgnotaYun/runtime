@@ -636,6 +636,7 @@ else()
         HAVE_CLOCK_REALTIME)
 endif()
 
+
 check_symbol_exists(
     clock_gettime_nsec_np
     time.h
@@ -1102,7 +1103,7 @@ check_symbol_exists(
     sys/sysmacros.h
     HAVE_MAKEDEV_SYSMACROSH)
 
-if (NOT HAVE_MAKEDEV_FILEH AND NOT HAVE_MAKEDEV_SYSMACROSH AND NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_HAIKU)
+if (NOT HAVE_MAKEDEV_FILEH AND NOT HAVE_MAKEDEV_SYSMACROSH AND NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_HAIKU AND NOT CLR_CMAKE_TARGET_HORIZ)
   message(FATAL_ERROR "Cannot find the makedev function on this platform.")
 endif()
 
@@ -1123,6 +1124,13 @@ check_c_source_compiles(
     }
     "
     HAVE_TERMIOS2)
+
+if (CLR_CMAKE_TARGET_HORIZ)
+    # Declared by newlib or the libnx/libounce headers, but not usable on Horizon
+    set(HAVE_FCHMOD 0)    # not implemented by the libnx/libounce file systems
+    set(HAVE_FORK 0)      # newlib's fork is a stub that always fails
+    set(HAVE_RT_MSGHDR 0) # no routing sockets
+endif ()
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/Common/pal_config.h.in

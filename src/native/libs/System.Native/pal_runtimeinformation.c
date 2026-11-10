@@ -7,7 +7,12 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#if defined(HOST_HORIZ)
+#include <stdlib.h>
+#include <switch/runtime/hosversion.h>
+#else
 #include <sys/utsname.h>
+#endif
 #if defined(TARGET_ANDROID)
 #include <sys/system_properties.h>
 #elif defined(TARGET_OSX)
@@ -33,6 +38,12 @@ char* SystemNative_GetUnixRelease(void)
     {
         return NULL;
     }
+#elif defined(HOST_HORIZ)
+    // Horizon has no uname; report the system firmware version
+    u32 hosVersion = hosversionGet();
+    char release[16];
+    snprintf(release, sizeof(release), "%u.%u.%u", HOSVER_MAJOR(hosVersion), HOSVER_MINOR(hosVersion), HOSVER_MICRO(hosVersion));
+    return strdup(release);
 #else
     struct utsname _utsname;
     return uname(&_utsname) != -1 ?
@@ -43,6 +54,23 @@ char* SystemNative_GetUnixRelease(void)
 
 int32_t SystemNative_GetUnixVersion(char* version, int* capacity)
 {
+#if defined(HOST_HORIZ)
+    char* release = SystemNative_GetUnixRelease();
+    if (release != NULL)
+    {
+        int r = snprintf(version, (size_t)(*capacity), "Horizon %s", release);
+        free(release);
+        if (r < 0)
+        {
+            return -1;
+        }
+        if (r >= *capacity)
+        {
+            *capacity = r + 1;
+            return -1;
+        }
+    }
+#else
     struct utsname _utsname;
     if (uname(&_utsname) != -1)
     {
@@ -53,6 +81,7 @@ int32_t SystemNative_GetUnixVersion(char* version, int* capacity)
             return -1;
         }
     }
+#endif
 
     return 0;
 }
@@ -74,8 +103,10 @@ enum
 
 int32_t SystemNative_GetOSArchitecture(void)
 {
-#ifdef TARGET_WASM
+#if defined(TARGET_WASM)
     return ARCH_WASM;
+#elif defined(HOST_HORIZ)
+    return ARCH_ARM64;
 #else
     int32_t result = -1;
 #ifdef TARGET_SUNOS

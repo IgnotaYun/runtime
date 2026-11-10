@@ -53,10 +53,10 @@
 #else
 #include <linux/if_packet.h>
 #endif
-#elif defined(AF_LINK)
+#elif defined(AF_LINK) && !defined(TARGET_HORIZ) // Horizon's BSD headers define AF_LINK, but it has no link-layer sockets
 #include <net/if_dl.h>
 #include <net/if_types.h>
-#elif defined(TARGET_WASI)
+#elif defined(TARGET_WASI) || defined(TARGET_HORIZ)
 #else
 #error System must have AF_PACKET or AF_LINK.
 #endif

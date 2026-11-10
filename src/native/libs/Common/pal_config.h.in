@@ -153,3 +153,7 @@
 #undef HAVE_STAT64
 #define HAVE_STAT64 0
 #endif
+
+#if defined(HOST_HORIZ)
+#include "pal_horiz_compat.h"
+#endif

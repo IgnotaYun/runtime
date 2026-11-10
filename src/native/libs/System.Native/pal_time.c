@@ -64,7 +64,7 @@ int32_t SystemNative_FUTimens(intptr_t fd, TimeSpec* times)
     updatedTimes[1].tv_nsec = (long)times[1].tv_nsec;
 
     while (CheckInterrupted(result = futimens(ToFileDescriptor(fd), updatedTimes)));
-#else
+#elif HAVE_FUTIMES
     // Fallback on unsupported platforms (e.g. iOS, tvOS, watchOS)
     // to futimes (lower precision)
     struct timeval updatedTimes[2];
@@ -74,6 +74,11 @@ int32_t SystemNative_FUTimens(intptr_t fd, TimeSpec* times)
     updatedTimes[1].tv_usec = (int)times[1].tv_nsec / 1000;
 
     while (CheckInterrupted(result = futimes(ToFileDescriptor(fd), updatedTimes)));
+#else
+    (void)fd;
+    (void)times;
+    errno = ENOTSUP;
+    result = -1;
 #endif
 
     return result;
@@ -114,7 +119,7 @@ int64_t SystemNative_GetBootTimeTicks(void)
 
 double SystemNative_GetCpuUtilization(ProcessCpuInformation* previousCpuInfo)
 {
-#if defined(HAVE_GETRUSAGE)
+#if HAVE_GETRUSAGE
     uint64_t kernelTime = 0;
     uint64_t userTime = 0;
 
@@ -163,6 +168,10 @@ double SystemNative_GetCpuUtilization(ProcessCpuInformation* previousCpuInfo)
     previousCpuInfo->lastRecordedKernelTime = kernelTime;
 
     return cpuUtilization;
+#elif defined(TARGET_HORIZ)
+    // Horizon does not account CPU time per process
+    (void)previousCpuInfo;
+    return 0;
 #else
     (void)previousCpuInfo; // unused
     assert(false);

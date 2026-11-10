@@ -1,6 +1,12 @@
 project(System.Native C)
 
-if (NOT CLR_CMAKE_TARGET_MACCATALYST AND NOT CLR_CMAKE_TARGET_IOS AND NOT CLR_CMAKE_TARGET_TVOS AND NOT CLR_CMAKE_TARGET_WASI)
+# Horizon has no terminal, signals, child processes, mounts or user accounts.
+# The horiz mirror runs on Linux and keeps the Unix terminal and signal code.
+if (CLR_CMAKE_TARGET_HORIZ AND NOT CLR_CMAKE_TARGET_HORIZ_MIRROR)
+    set(HORIZ_DEVICE 1)
+endif ()
+
+if (NOT CLR_CMAKE_TARGET_MACCATALYST AND NOT CLR_CMAKE_TARGET_IOS AND NOT CLR_CMAKE_TARGET_TVOS AND NOT CLR_CMAKE_TARGET_WASI AND NOT HORIZ_DEVICE)
     add_definitions(-DHAS_CONSOLE_SIGNALS)
 endif ()
 
@@ -21,7 +27,7 @@ set(NATIVE_SOURCES
     pal_sysctl.c
 )
 
-if (NOT CLR_CMAKE_TARGET_WASI)
+if (NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_HORIZ)
     list (APPEND NATIVE_SOURCES
         pal_dynamicload.c
         pal_mount.c
@@ -30,6 +36,19 @@ if (NOT CLR_CMAKE_TARGET_WASI)
         pal_threading.c
         pal_uid.c
     )
+elseif (CLR_CMAKE_TARGET_HORIZ)
+    list (APPEND NATIVE_SOURCES
+        pal_dynamicload_wasi.c
+        pal_mount_wasi.c
+        pal_process_wasi.c
+        pal_threading.c
+        pal_uid_wasi.c
+    )
+    if (HORIZ_DEVICE)
+        list (APPEND NATIVE_SOURCES pal_signal_wasi.c)
+    else ()
+        list (APPEND NATIVE_SOURCES pal_signal.c)
+    endif ()
 else()
     list (APPEND NATIVE_SOURCES
         pal_dynamicload_wasi.c
@@ -75,14 +94,14 @@ else()
         pal_log.c
         pal_iossupportversion.c)
 
-    if (CLR_CMAKE_TARGET_WASI)
+    if (CLR_CMAKE_TARGET_WASI OR HORIZ_DEVICE)
         list (APPEND NATIVE_SOURCES pal_console_wasi.c)
     else()
         list (APPEND NATIVE_SOURCES pal_console.c)
     endif()
 endif()
 
-if (NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI)
+if (NOT CLR_CMAKE_TARGET_BROWSER AND NOT CLR_CMAKE_TARGET_WASI AND NOT CLR_CMAKE_TARGET_HORIZ)
     list (APPEND NATIVE_SOURCES pal_networkchange.c)
 endif ()
 

@@ -749,8 +749,13 @@ int32_t SystemNative_FSync(intptr_t fd)
 int32_t SystemNative_FLock(intptr_t fd, int32_t operation)
 {
     int32_t result;
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_HORIZ)
     while ((result = flock(ToFileDescriptor(fd), operation)) < 0 && errno == EINTR);
+#elif defined(TARGET_HORIZ)
+    // Horizon has no file locks
+    (void)fd;
+    (void)operation;
+    result = 0;
 #else /* TARGET_WASI */
     result = EINTR;
 #endif /* TARGET_WASI */
@@ -804,7 +809,7 @@ int32_t SystemNative_SymLink(const char* target, const char* linkPath)
 
 void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint32_t* minorNumber)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_HORIZ)
     dev_t castedDev = (dev_t)dev;
     *majorNumber = (uint32_t)major(castedDev);
     *minorNumber = (uint32_t)minor(castedDev);
@@ -817,7 +822,7 @@ void SystemNative_GetDeviceIdentifiers(uint64_t dev, uint32_t* majorNumber, uint
 
 int32_t SystemNative_MkNod(const char* pathName, uint32_t mode, uint32_t major, uint32_t minor)
 {
-#if !defined(TARGET_WASI)
+#if !defined(TARGET_WASI) && !defined(TARGET_HORIZ)
     dev_t dev = (dev_t)makedev(major, minor);
 
     int32_t result;
@@ -1726,6 +1731,10 @@ uint32_t SystemNative_GetFileSystemType(intptr_t fd)
 #endif
 #elif defined(TARGET_WASI)
     return EINTR;
+#elif defined(TARGET_HORIZ)
+    // libnx/libounce cannot query the file system of a descriptor
+    (void)fd;
+    return 0;
 #elif !HAVE_NON_LEGACY_STATFS
     int statfsRes;
     struct statvfs statfsArgs;

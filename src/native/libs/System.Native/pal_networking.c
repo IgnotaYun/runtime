@@ -226,16 +226,24 @@ static bool TryConvertAddressFamilyPalToPlatform(int32_t palAddressFamily, sa_fa
             return true;
 
         case AddressFamily_AF_UNIX:
+#if defined(TARGET_HORIZ)
+            return false; // Horizon has no UNIX domain sockets
+#else
             *platformAddressFamily = AF_UNIX;
             return true;
+#endif
 
         case AddressFamily_AF_INET:
             *platformAddressFamily = AF_INET;
             return true;
 
         case AddressFamily_AF_INET6:
+#if defined(TARGET_HORIZ)
+            return false; // Horizon's BSD service does not support IPv6
+#else
             *platformAddressFamily = AF_INET6;
             return true;
+#endif
 #ifdef AF_PACKET
         case AddressFamily_AF_PACKET:
             *platformAddressFamily = AF_PACKET;
@@ -1721,7 +1729,7 @@ int32_t SystemNative_Accept(intptr_t socket, uint8_t* socketAddress, int32_t* so
 #endif // !TARGET_WASI
 #else
     while ((accepted = accept(fd, (struct sockaddr*)socketAddress, &addrLen)) < 0 && errno == EINTR);
-#if defined(FD_CLOEXEC)
+#if defined(FD_CLOEXEC) && !defined(TARGET_HORIZ) // libnx/libounce's fcntl only supports F_GETFL and F_SETFL
     // macOS does not have accept4 but it can set _CLOEXEC on descriptor.
     // Unlike accept4 it is not atomic and the fd can leak child process.
     if ((accepted != -1) && fcntl(accepted, F_SETFD, FD_CLOEXEC) != 0)
