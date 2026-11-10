@@ -465,7 +465,10 @@ bool GCToOSInterface::CanGetCurrentProcessorNumber()
 // Flush write buffers of processors that are executing threads of the current process
 void GCToOSInterface::FlushProcessWriteBuffers()
 {
-#ifndef TARGET_WASM
+#ifdef HOST_HORIZ
+    // Implemented by the PAL, which knows the threads to interrupt
+    horiz_flush_process_write_buffers();
+#elif !defined(TARGET_WASM)
 #if defined(__linux__) || HAVE_SYS_MEMBARRIER_H
     if (s_flushUsingMemBarrier)
     {

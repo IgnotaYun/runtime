@@ -54,6 +54,12 @@ bool minipal_horiz_flush_instruction_cache(void* address, size_t size);
 // Returns false before the arena is created.
 bool minipal_horiz_get_code_arena_info(size_t* reserved, size_t* backed, size_t* chunks);
 
+// FlushProcessWriteBuffers: execute a full memory barrier on every other thread
+// known to the runtime, by pausing and resuming each with svcSetThreadActivity.
+// Used by the PAL and the GC; costs two system calls per thread. Device only (the
+// horiz mirror uses membarrier).
+void horiz_flush_process_write_buffers(void);
+
 //
 // Hooks the application may implement (the runtime has weak defaults)
 //

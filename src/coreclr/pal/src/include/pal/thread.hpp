@@ -240,6 +240,12 @@ namespace CorUnix
         mach_port_t m_machPortSelf;
 #endif
 
+#ifdef HOST_HORIZ
+        // Kernel handle of the thread (libnx/libounce Thread::handle), 0 until the
+        // thread runs. Read by FlushProcessWriteBuffers under the process lock.
+        uint32_t m_horizHandle;
+#endif
+
         // > 0 when there is an exception holder which causes h/w
         // exceptions to be sent down the C++ exception chain.
         int m_hardwareExceptionHolderCount;
@@ -316,6 +322,9 @@ namespace CorUnix
             m_pthreadSelf(0),
 #if HAVE_MACH_THREADS
             m_machPortSelf(0),
+#endif
+#ifdef HOST_HORIZ
+            m_horizHandle(0),
 #endif
             m_hardwareExceptionHolderCount(0),
             m_lpStartAddress(NULL),
@@ -463,6 +472,24 @@ namespace CorUnix
         {
             return m_dwLwpId;
         };
+
+#ifdef HOST_HORIZ
+        uint32_t
+        GetHorizHandle(
+            void
+            )
+        {
+            return __atomic_load_n(&m_horizHandle, __ATOMIC_ACQUIRE);
+        };
+
+        void
+        SetHorizHandle(
+            uint32_t handle
+            )
+        {
+            __atomic_store_n(&m_horizHandle, handle, __ATOMIC_RELEASE);
+        };
+#endif
 
         pthread_t
         GetPThreadSelf(

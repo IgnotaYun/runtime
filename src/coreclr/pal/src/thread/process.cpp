@@ -2903,7 +2903,8 @@ InitializeFlushProcessWriteBuffers()
 #endif
 
 #if defined(TARGET_APPLE) || defined(TARGET_WASM) || defined(TARGET_HORIZ)
-    // horiz: mprotect has no effect on the memory of the PAL's mmap
+    // horiz: mprotect has no effect on the memory of the PAL's mmap. The device
+    // pauses and resumes threads instead, which needs no setup.
     return TRUE;
 #else
     s_helperPage = static_cast<int*>(mmap(0, GetVirtualPageSize(), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
@@ -2957,7 +2958,10 @@ VOID
 PALAPI
 FlushProcessWriteBuffers()
 {
-#ifndef TARGET_WASM
+#ifdef HOST_HORIZ
+    // Pauses and resumes the other threads (horiz/membarrier-horiz.cpp)
+    horiz_flush_process_write_buffers();
+#elif !defined(TARGET_WASM)
 #if defined(__linux__) || HAVE_SYS_MEMBARRIER_H
     if (s_flushUsingMemBarrier)
     {
@@ -3017,7 +3021,7 @@ FlushProcessWriteBuffers()
         CHECK_MACH("vm_deallocate()", machret);
     }
 #endif // TARGET_APPLE
-#endif // !TARGET_WASM
+#endif // HOST_HORIZ / !TARGET_WASM
 }
 
 /*++

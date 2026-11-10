@@ -1591,6 +1591,9 @@ CPalThread::ThreadEntry(
 
     pThread->m_threadId = THREADSilentGetCurrentThreadId();
     pThread->m_pthreadSelf = pthread_self();
+#ifdef HOST_HORIZ
+    pThread->SetHorizHandle(threadGetCurHandle());
+#endif
 #if HAVE_MACH_THREADS
     pThread->m_machPortSelf = pthread_mach_thread_np(pThread->m_pthreadSelf);
 #endif
@@ -1719,6 +1722,9 @@ CorUnix::CreateThreadData(
 
     pThread->m_threadId = THREADSilentGetCurrentThreadId();
     pThread->m_pthreadSelf = pthread_self();
+#ifdef HOST_HORIZ
+    pThread->SetHorizHandle(threadGetCurHandle());
+#endif
 #if HAVE_MACH_THREADS
     pThread->m_machPortSelf = pthread_mach_thread_np(pThread->m_pthreadSelf);
 #endif
