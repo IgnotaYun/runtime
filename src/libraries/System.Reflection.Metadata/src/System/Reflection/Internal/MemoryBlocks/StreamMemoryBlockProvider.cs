@@ -43,8 +43,16 @@ namespace System.Reflection.Internal
             _imageStart = imageStart;
             _imageSize = imageSize;
             _leaveOpen = leaveOpen;
-            _useMemoryMap = stream is FileStream;
+            _useMemoryMap = stream is FileStream && IsMemoryMappingSupported;
         }
+
+        // Horizon cannot map files, reading them is the only option.
+        private static bool IsMemoryMappingSupported =>
+#if NET
+            !OperatingSystem.IsOSPlatform("horiz");
+#else
+            true;
+#endif
 
         protected override void Dispose(bool disposing)
         {

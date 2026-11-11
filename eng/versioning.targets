@@ -71,6 +71,11 @@
     <SupportedPlatform Include="macCatalyst" />
   </ItemGroup>
 
+  <!-- Lets cross platform code check for horiz with OperatingSystem.IsOSPlatform -->
+  <ItemGroup>
+    <SupportedPlatform Include="horiz" />
+  </ItemGroup>
+
   <!-- Enables browser warnings for cross platform or Browser targeted builds -->
   <ItemGroup Condition="('$(TargetPlatformIdentifier)' == 'browser' or '$(CrossPlatformAndHasNoBrowserTarget)' == 'true') and '$(IsTestProject)' != 'true'">
     <SupportedPlatform Include="browser"/>
