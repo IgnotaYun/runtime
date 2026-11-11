@@ -1079,8 +1079,15 @@ namespace System.Net.Security
 
                 if (certificate == null)
                 {
+#if TARGET_HORIZ
+                    // Horizon's ssl service verified the certificate during the handshake,
+                    // and does not hand it over: certificates cannot be loaded on horiz.
+                    // Callbacks are told that there are no errors, with no certificate.
+                    Debug.Assert(!_sslAuthenticationOptions.IsServer);
+#else
                     if (NetEventSource.Log.IsEnabled() && RemoteCertRequired) NetEventSource.Error(this, $"Remote certificate required, but no remote certificate received");
                     sslPolicyErrors |= SslPolicyErrors.RemoteCertificateNotAvailable;
+#endif
                 }
                 else
                 {

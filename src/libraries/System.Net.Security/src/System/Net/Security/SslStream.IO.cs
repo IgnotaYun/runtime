@@ -296,7 +296,7 @@ namespace System.Net.Security
             }
             try
             {
-#if TARGET_APPLE
+#if TARGET_APPLE || TARGET_HORIZ
                 if (SslStreamPal.ShouldUseAsyncSecurityContext(_sslAuthenticationOptions))
                 {
                     Debug.Assert(_sslAuthenticationOptions.IsClient);
@@ -318,7 +318,7 @@ namespace System.Net.Security
                     CompleteHandshake(_sslAuthenticationOptions);
                     return;
                 }
-#endif // TARGET_APPLE
+#endif // TARGET_APPLE || TARGET_HORIZ
 
                 if (!receiveFirst)
                 {
@@ -864,13 +864,13 @@ namespace System.Net.Security
             try
             {
 
-#if TARGET_APPLE
+#if TARGET_APPLE || TARGET_HORIZ
                 if (SslStreamPal.IsAsyncSecurityContext(_securityContext!))
                 {
                     ValueTask<int> task = SslStreamPal.AsyncReadAsync(_securityContext!, buffer, cancellationToken);
                     return await TIOAdapter.WaitAsync(task).ConfigureAwait(false);
                 }
-#endif // TARGET_APPLE
+#endif // TARGET_APPLE || TARGET_HORIZ
 
                 int processedLength = 0;
                 int nextTlsFrameLength = UnknownTlsFrameLength;
@@ -1013,14 +1013,14 @@ namespace System.Net.Security
 
             try
             {
-#if TARGET_APPLE
+#if TARGET_APPLE || TARGET_HORIZ
                 if (SslStreamPal.IsAsyncSecurityContext(_securityContext!))
                 {
                     Task task = SslStreamPal.AsyncWriteAsync(_securityContext!, buffer, cancellationToken);
                     await TIOAdapter.WaitAsync(task).ConfigureAwait(false);
                     return;
                 }
-#endif // TARGET_APPLE
+#endif // TARGET_APPLE || TARGET_HORIZ
 
                 ValueTask t = buffer.Length < MaxDataSize ?
                     WriteSingleChunk<TIOAdapter>(buffer, cancellationToken) :

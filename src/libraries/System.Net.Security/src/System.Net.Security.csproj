@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>$(NetCoreAppCurrent)-windows;$(NetCoreAppCurrent)-linux;$(NetCoreAppCurrent)-freebsd;$(NetCoreAppCurrent)-haiku;$(NetCoreAppCurrent)-android;$(NetCoreAppCurrent)-osx;$(NetCoreAppCurrent)-ios;$(NetCoreAppCurrent)-tvos;$(NetCoreAppCurrent)</TargetFrameworks>
+    <TargetFrameworks>$(NetCoreAppCurrent)-windows;$(NetCoreAppCurrent)-linux;$(NetCoreAppCurrent)-freebsd;$(NetCoreAppCurrent)-haiku;$(NetCoreAppCurrent)-android;$(NetCoreAppCurrent)-osx;$(NetCoreAppCurrent)-ios;$(NetCoreAppCurrent)-tvos;$(NetCoreAppCurrent)-horiz;$(NetCoreAppCurrent)</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- This is needed so that code for TlsCipherSuite will have no namespace (causes compile errors) when used within T4 template  -->
     <DefineConstants>$(DefineConstants);PRODUCT</DefineConstants>
@@ -18,7 +18,9 @@
     <DefineConstants Condition="'$(TargetPlatformIdentifier)' == 'osx' or '$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'tvos'">$(DefineConstants);TARGET_APPLE</DefineConstants>
     <UseAndroidCrypto Condition="'$(TargetPlatformIdentifier)' == 'android'">true</UseAndroidCrypto>
     <UseAppleCrypto Condition="'$(TargetPlatformIdentifier)' == 'osx' or '$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'tvos'">true</UseAppleCrypto>
-    <UseManagedNtlm Condition="'$(TargetPlatformIdentifier)' == 'android' or '$(TargetPlatformIdentifier)' == 'tvos'">true</UseManagedNtlm>
+    <!-- TLS over Horizon's ssl service, see Pal.Horiz\SafeDeleteSslContext.cs -->
+    <UseHorizSsl Condition="'$(TargetPlatformIdentifier)' == 'horiz'">true</UseHorizSsl>
+    <UseManagedNtlm Condition="'$(TargetPlatformIdentifier)' == 'android' or '$(TargetPlatformIdentifier)' == 'tvos' or '$(UseHorizSsl)' == 'true'">true</UseManagedNtlm>
     <DefineConstants Condition="'$(UseAndroidCrypto)' == 'true' or '$(UseAppleCrypto)' == 'true'">$(DefineConstants);SYSNETSECURITY_NO_OPENSSL</DefineConstants>
     <GenAPIExcludeApiList>ReferenceAssemblyExclusions.txt</GenAPIExcludeApiList>
   </PropertyGroup>
@@ -329,7 +331,7 @@
              Link="Common\System\Security\Cryptography\CryptoPool.cs" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(TargetPlatformIdentifier)' != '' and '$(TargetPlatformIdentifier)' != 'windows' and '$(UseAndroidCrypto)' != 'true' and '$(UseAppleCrypto)' != 'true'">
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' != '' and '$(TargetPlatformIdentifier)' != 'windows' and '$(UseAndroidCrypto)' != 'true' and '$(UseAppleCrypto)' != 'true' and '$(UseHorizSsl)' != 'true'">
     <Compile Include="System\Net\CertificateValidationPal.Unix.cs" />
     <Compile Include="System\Net\Security\CipherSuitesPolicyPal.Linux.cs" />
     <Compile Include="System\Net\Security\SslStreamPal.Unix.cs" />
@@ -416,6 +418,18 @@
     <Compile Include="System\Net\Security\SslStreamPal.Android.cs" />
     <Compile Include="System\Net\Security\StreamSizes.Unix.cs" />
     <Compile Include="System\Net\Security\CipherSuitesPolicyPal.Android.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseHorizSsl)' == 'true'">
+    <Compile Include="$(CommonPath)Interop\Unix\System.Native\Interop.HorizSsl.cs"
+             Link="Common\Interop\Unix\System.Native\Interop.HorizSsl.cs" />
+    <Compile Include="System\Net\CertificateValidationPal.Horiz.cs" />
+    <Compile Include="System\Net\Security\CipherSuitesPolicyPal.Horiz.cs" />
+    <Compile Include="System\Net\Security\Pal.Horiz\SafeDeleteSslContext.cs" />
+    <Compile Include="System\Net\Security\SslConnectionInfo.Horiz.cs" />
+    <Compile Include="System\Net\Security\SslStreamCertificateContext.Horiz.cs" />
+    <Compile Include="System\Net\Security\SslStreamPal.Horiz.cs" />
+    <Compile Include="System\Net\Security\StreamSizes.Unix.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseAppleCrypto)' == 'true'">

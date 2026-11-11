@@ -422,6 +422,15 @@
   <data name="net_ssl_allow_rsa_padding_not_supported" xml:space="preserve">
     <value>Disabling AllowRsaPssPadding or AllowRsaPkcs1Padding is not supported on this platform.</value>
   </data>
+  <data name="net_ssl_horiz_service_error" xml:space="preserve">
+    <value>The system's TLS service failed with error {0}.</value>
+  </data>
+  <data name="net_ssl_horiz_protocol_not_enabled" xml:space="preserve">
+    <value>The connection was established with {0}, which is not one of the enabled protocols ({1}).</value>
+  </data>
+  <data name="net_ssl_horiz_networkstream_required" xml:space="preserve">
+    <value>On this platform, SslStream only works over a NetworkStream.</value>
+  </data>
   <data name="SystemNetSecurity_PlatformNotSupported" xml:space="preserve">
     <value>System.Net.Security is not supported on this platform.</value>
   </data>
