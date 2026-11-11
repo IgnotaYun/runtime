@@ -122,7 +122,12 @@ PEImageLayout* PEImageLayout::Load(PEImage* pOwner, HRESULT* loadFailure)
 {
     STANDARD_VM_CONTRACT;
 
+#ifdef TARGET_HORIZ
+    // Horizon cannot map files: images are always read and converted
+    bool disableMapping = true;
+#else
     bool disableMapping = CLRConfig::GetConfigValue(CLRConfig::INTERNAL_PELoader_DisableMapping);
+#endif
 
     if (pOwner->IsFile())
     {
@@ -677,6 +682,36 @@ FlatImageLayout::FlatImageLayout(PEImage* pOwner)
         INT64 uncompressedSize;
         BOOL isCompressed = pOwner->IsCompressed(&uncompressedSize);
 
+#ifdef TARGET_HORIZ
+        // Horizon cannot map files, so the image is read into anonymous memory
+        m_FileMap.Assign(CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD)(size >> 32), (DWORD)size, NULL));
+        if (m_FileMap == NULL)
+            ThrowLastError();
+
+        m_FileView.Assign(CLRMapViewOfFile(m_FileMap, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
+        if (m_FileView == NULL)
+            ThrowLastError();
+
+        LARGE_INTEGER position;
+        position.QuadPart = offset;
+        if (!SetFilePointerEx(hFile, position, NULL, FILE_BEGIN))
+            ThrowLastError();
+
+        for (INT64 done = 0; done < size; )
+        {
+            DWORD read = 0;
+            if (!ReadFile(hFile, (BYTE*)(void*)m_FileView + done, (DWORD)min(size - done, (INT64)0x40000000), &read, NULL))
+                ThrowLastError();
+
+            // The file is shorter than the image
+            if (read == 0)
+                ThrowHR(COR_E_BADIMAGEFORMAT);
+
+            done += read;
+        }
+
+        addr = m_FileView;
+#else
         DWORD mapAccess = PAGE_READONLY;
 #if !defined(TARGET_UNIX)
         // to map sections into executable views on Windows the mapping must have EXECUTE permissions
@@ -705,6 +740,7 @@ FlatImageLayout::FlatImageLayout(PEImage* pOwner)
 
         m_FileView.Assign(view);
         addr = (LPVOID)((size_t)view + offset - mapBegin);
+#endif // TARGET_HORIZ
 
         if (isCompressed)
         {
