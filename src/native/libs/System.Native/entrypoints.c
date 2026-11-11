@@ -24,6 +24,9 @@
 #include "pal_runtimeinformation.h"
 #include "pal_searchpath.h"
 #include "pal_signal.h"
+#if defined(HOST_HORIZ)
+#include "pal_ssl_horiz.h"
+#endif
 #include "pal_string.h"
 #include "pal_sysctl.h"
 #include "pal_tcpstate.h"
@@ -286,6 +289,15 @@ static const Entry s_sysNative[] =
     DllImportEntry(SystemNative_GetUInt64OSThreadId)
     DllImportEntry(SystemNative_TryGetUInt32OSThreadId)
     DllImportEntry(SystemNative_Select)
+#if defined(HOST_HORIZ)
+    DllImportEntry(SystemNative_HorizSslCreate)
+    DllImportEntry(SystemNative_HorizSslDestroy)
+    DllImportEntry(SystemNative_HorizSslHandshake)
+    DllImportEntry(SystemNative_HorizSslRead)
+    DllImportEntry(SystemNative_HorizSslWrite)
+    DllImportEntry(SystemNative_HorizSslGetCipherInfo)
+    DllImportEntry(SystemNative_HorizSslGetAlpnProtocol)
+#endif
 };
 
 EXTERN_C const void* SystemResolveDllImport(const char* name);
